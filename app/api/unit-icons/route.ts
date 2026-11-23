@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import unitPortraits from '@/lib/unitPortraits.json';
+
+const localPortraitMap = unitPortraits as Record<string, string>;
 
 type WikiPage = {
   title?: string;
@@ -44,10 +47,33 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ icons: {} });
   }
 
+  const result: Record<string, string> = {};
+  const missingNames: string[] = [];
+
+  for (const name of names) {
+    const local = localPortraitMap[name.toLowerCase()];
+    if (local) {
+      result[name] = local;
+    } else {
+      missingNames.push(name);
+    }
+  }
+
+  if (missingNames.length === 0) {
+    return NextResponse.json(
+      { icons: result },
+      {
+        headers: {
+          'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=604800',
+        },
+      }
+    );
+  }
+
   try {
     const queryUrl =
       'https://animeadventures.fandom.com/api.php?action=query&titles=' +
-      encodeURIComponent(names.join('|')) +
+      encodeURIComponent(missingNames.join('|')) +
       '&prop=pageimages|images&pithumbsize=200&imlimit=50&format=json&redirects=1';
 
     const res = await fetch(queryUrl, { next: { revalidate: 86400 } });
@@ -123,8 +149,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const result: Record<string, string> = {};
-    for (const reqName of names) {
+    for (const reqName of missingNames) {
       let resolved = reqName;
       for (let i = 0; i < 3; i++) {
         const next = aliasToTitle.get(resolved);
@@ -146,6 +171,6 @@ export async function GET(req: NextRequest) {
       }
     );
   } catch {
-    return NextResponse.json({ icons: {} });
+    return NextResponse.json({ icons: result });
   }
 }
