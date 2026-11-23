@@ -715,14 +715,18 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
 
                   {/* Inventory Grid */}
                   {activeItems.length > 0 ? (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
+                    <div
+                      key={`${rarityFilter}-${activeAccount.id}`}
+                      className="grid grid-cols-2 sm:grid-cols-3 gap-3.5"
+                    >
                       {activeItems.map((item, idx) => {
                         const style = getRarityStyle(item.rarity, item.name);
                         const icon = getItemIcon(item.name);
                         return (
                           <div
                             key={`${item.name}-${idx}`}
-                            className={`rounded-2xl border p-4 flex flex-col justify-between min-h-[156px] transition hover:scale-[1.01] ${style.card}`}
+                            style={{ animationDelay: `${Math.min(idx * 40, 280)}ms` }}
+                            className={`rounded-2xl border p-4 flex flex-col justify-between min-h-[156px] transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.01] animate-fade-slide ${style.card}`}
                           >
                             <div className="flex justify-end">
                               <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-black/40 border border-white/10 text-zinc-100">
@@ -755,7 +759,10 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                       })}
                     </div>
                   ) : (
-                    <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/70 p-5 text-center space-y-1">
+                    <div
+                      key={`empty-${rarityFilter}-${activeAccount.id}`}
+                      className="rounded-2xl border border-red-500/25 bg-[#13080b]/70 p-5 text-center space-y-1 animate-fade-slide"
+                    >
                       <p className="text-xs text-zinc-300">
                         ยังไม่มีรายการ Portal / Stat Cube จากบอทนี้ (ระบบจะซิงค์เมื่อเปิดกระเป๋า Items หรือจบ Dungeon Room)
                       </p>
