@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import KageBackdrop from '@/components/KageBackdrop';
-import { Activity, Flame, KeyRound, ShieldCheck } from 'lucide-react';
+import NextyLogo from '@/components/NextyLogo';
+import { Activity, KeyRound, ShieldCheck } from 'lucide-react';
 
 export default function LoginScreen({
   envMissing = false,
@@ -31,16 +32,8 @@ export default function LoginScreen({
       <KageBackdrop />
 
       <div className="relative z-10 w-full max-w-md rounded-2xl border border-red-500/35 bg-gradient-to-b from-[#1a0b0f]/90 via-[#11080a]/92 to-[#0b0607]/95 p-8 shadow-[0_0_55px_rgba(220,38,38,0.22)] backdrop-blur-xl animate-fade-slide">
-        <div className="flex items-center gap-3.5 mb-7">
-          <div className="h-12 w-12 rounded-2xl bg-red-600/20 border border-red-500/45 flex items-center justify-center text-red-400 shadow-[0_0_20px_rgba(220,38,38,0.35)]">
-            <Flame className="w-6 h-6" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-wide bg-gradient-to-r from-white to-red-400 bg-clip-text text-transparent">
-              AA DROP TRACKER
-            </h1>
-            <p className="text-xs text-red-300/70">Anime Adventures Command Center</p>
-          </div>
+        <div className="mb-7">
+          <NextyLogo size="lg" />
         </div>
 
         {envMissing && (

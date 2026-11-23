@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import KageBackdrop from '@/components/KageBackdrop';
+import NextyLogo from '@/components/NextyLogo';
 import {
   Activity,
   Bot,
@@ -334,19 +335,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
       {/* Top Navbar */}
       <header className="sticky top-0 z-20 border-b border-red-500/25 bg-[#0c0709]/85 backdrop-blur-xl">
         <div className="max-w-[1520px] mx-auto px-4 sm:px-8 h-16 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl border bg-red-600/20 border-red-500/45 text-red-400 shadow-[0_0_15px_rgba(220,38,38,0.35)] flex items-center justify-center">
-              <Flame className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="font-bold text-sm sm:text-base tracking-wide bg-gradient-to-r from-white to-red-400 bg-clip-text text-transparent">
-                AA DROP TRACKER
-              </h1>
-              <p className="text-[11px] hidden sm:block text-red-300/60">
-                Anime Adventures Command Center
-              </p>
-            </div>
-          </div>
+          <NextyLogo size="sm" />
 
           <div className="flex items-center gap-2 sm:gap-3">
             <nav className="aa-seg" aria-label="เมนูหลัก">
