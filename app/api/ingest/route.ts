@@ -135,12 +135,31 @@ export async function POST(request: Request) {
         mergedCurrencies._team = body.team;
       }
 
-      const mergedItems =
-        Array.isArray(body.items) && body.items.length > 0
-          ? body.items
-          : Array.isArray(existingSnap?.items)
-          ? existingSnap.items
-          : [];
+      const incomingItems: RewardItem[] = Array.isArray(body.items) ? body.items : [];
+      const existingItems: RewardItem[] = Array.isArray(existingSnap?.items)
+        ? (existingSnap.items as RewardItem[])
+        : [];
+
+      const isPortalItem = (it: RewardItem) =>
+        it.category === 'portal' || (it.name || '').toLowerCase().includes('portal');
+
+      for (const it of incomingItems) {
+        if ((it.name || '').toLowerCase().includes('dawn coin') && typeof it.amount === 'number') {
+          mergedCurrencies['Dawn Coins'] = it.amount;
+        }
+      }
+
+      const incomingPortals = incomingItems.filter(isPortalItem);
+      const incomingRegular = incomingItems.filter((it) => !isPortalItem(it));
+      const existingPortals = existingItems.filter(
+        (it) => isPortalItem(it) && (it.name || '').toLowerCase() !== 'portals'
+      );
+      const existingRegular = existingItems.filter((it) => !isPortalItem(it));
+
+      const mergedItems = [
+        ...(incomingPortals.length > 0 ? incomingPortals : existingPortals),
+        ...(incomingRegular.length > 0 ? incomingRegular : existingRegular),
+      ];
 
       await admin.from('inventory_snapshots').upsert(
         {

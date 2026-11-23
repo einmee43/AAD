@@ -253,7 +253,7 @@ local function readUsefulItems()
     for _, v in pairs(cachedCategoryItems.item) do
         table.insert(list, v)
     end
-    return list
+    return list, (seenPortal or seenItem)
 end
 
 -- Read equipped 6-unit team from PlayerGui.spawn_units.Lives.Frame.Units (slots 1..6)
@@ -350,34 +350,67 @@ local startCurrencies, statsReady = readCurrencies()
 local matchStartTime = os.time()
 local sentForCurrentMatch = false
 
--- 1. Heartbeat loop (every 45s)
+-- 1. Heartbeat loop (every 45s) + Fast watcher when Items GUI is open
+local lastQuickSync = 0
+local lastItemSig = ""
+
+local function sendHeartbeatNow(itemsList)
+    local status, mode, mapName, waveStr = detectState()
+    local cur, ready = readCurrencies()
+    if ready and not statsReady then
+        startCurrencies = cur
+        statsReady = true
+    end
+    if ready then
+        local usefulItems = itemsList or readUsefulItems()
+        for _, it in ipairs(usefulItems) do
+            if it.name and it.name:lower():find("dawn coin") then
+                cur["Dawn Coins"] = it.amount
+            end
+        end
+        postIngest({
+            event_type = "heartbeat",
+            status = status,
+            current_mode = mode,
+            current_map = mapName,
+            current_wave = waveStr,
+            currencies = cur,
+            items = usefulItems,
+            team = readEquippedTeam()
+        })
+    end
+end
+
 task.spawn(function()
     while true do
-        local status, mode, mapName, waveStr = detectState()
-        local cur, ready = readCurrencies()
-        if ready and not statsReady then
-            startCurrencies = cur
-            statsReady = true
-        end
-        if ready then
-            local usefulItems = readUsefulItems()
-            for _, it in ipairs(usefulItems) do
-                if it.name and it.name:lower():find("dawn coin") then
-                    cur["Dawn Coins"] = it.amount
+        sendHeartbeatNow(nil)
+        task.wait(45)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        pcall(function()
+            local pg = LocalPlayer:FindFirstChild("PlayerGui")
+            local itemsGui = pg and pg:FindFirstChild("items")
+            if itemsGui and itemsGui.Enabled then
+                local itemsList, sawAny = readUsefulItems()
+                if sawAny then
+                    local parts = {}
+                    for _, it in ipairs(itemsList) do
+                        table.insert(parts, (it.category or "i") .. ":" .. it.name .. "=" .. tostring(it.amount) .. ":" .. tostring(it.tier or ""))
+                    end
+                    table.sort(parts)
+                    local sig = table.concat(parts, "|")
+                    if sig ~= lastItemSig and (os.time() - lastQuickSync) >= 4 then
+                        lastItemSig = sig
+                        lastQuickSync = os.time()
+                        sendHeartbeatNow(itemsList)
+                    end
                 end
             end
-            postIngest({
-                event_type = "heartbeat",
-                status = status,
-                current_mode = mode,
-                current_map = mapName,
-                current_wave = waveStr,
-                currencies = cur,
-                items = usefulItems,
-                team = readEquippedTeam()
-            })
-        end
-        task.wait(45)
+        end)
+        task.wait(1.2)
     end
 end)
 

@@ -152,6 +152,14 @@ function getRarityStyle(rarity?: string, name?: string) {
       badge: 'bg-rose-500/15 text-rose-300 border-rose-500/40',
     };
   }
+  if (n.includes('dawn coin')) {
+    return {
+      label: 'Mythic',
+      card: 'border-purple-500/50 bg-gradient-to-b from-purple-950/45 to-[#130e24] shadow-[0_0_18px_rgba(168,85,247,0.16)]',
+      text: 'text-purple-400',
+      badge: 'bg-purple-500/15 text-purple-300 border-purple-500/40',
+    };
+  }
   if (r === 'legendary' || n.includes('reroll') || n.includes('star')) {
     return {
       label: 'Legendary',
