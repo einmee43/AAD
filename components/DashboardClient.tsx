@@ -112,6 +112,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   const [newLabel, setNewLabel] = useState('MuMu Farm');
   const [newWebhook, setNewWebhook] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [keyError, setKeyError] = useState<string | null>(null);
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
@@ -151,6 +152,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
 
   const handleCreateKey = async (e: React.FormEvent) => {
     e.preventDefault();
+    setKeyError(null);
     const res = await fetch('/api/keys', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -159,6 +161,9 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
     if (res.ok) {
       setNewWebhook('');
       fetchKeys();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      setKeyError(data.error || `Failed (${res.status})`);
     }
   };
 
@@ -599,6 +604,11 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                   <Plus className="w-4 h-4" />
                   Create API Key
                 </button>
+                {keyError && (
+                  <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
+                    {keyError}
+                  </div>
+                )}
               </form>
 
               <div className="space-y-2.5 pt-2">
