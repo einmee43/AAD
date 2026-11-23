@@ -349,38 +349,32 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            <div className="flex items-center gap-1.5 rounded-full border p-1 text-xs bg-[#14090c]/90 border-red-500/25">
+            <nav className="aa-seg" aria-label="เมนูหลัก">
               <button
                 onClick={() => setTab('profile')}
-                className={`px-4 py-1.5 font-semibold cursor-pointer ${
-                  tab === 'profile' ? 'btn-pill-primary' : 'btn-pill-dark'
-                }`}
+                aria-current={tab === 'profile' ? 'page' : undefined}
               >
                 โปรไฟล์ &amp; คลัง
               </button>
               <button
                 onClick={() => setTab('history')}
-                className={`px-4 py-1.5 font-semibold cursor-pointer ${
-                  tab === 'history' ? 'btn-pill-primary' : 'btn-pill-dark'
-                }`}
+                aria-current={tab === 'history' ? 'page' : undefined}
               >
                 ประวัติดรอป
               </button>
               <button
                 onClick={() => setTab('keys')}
-                className={`px-4 py-1.5 font-semibold cursor-pointer flex items-center gap-1.5 ${
-                  tab === 'keys' ? 'btn-pill-primary' : 'btn-pill-dark'
-                }`}
+                aria-current={tab === 'keys' ? 'page' : undefined}
               >
                 <KeyRound className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">API Keys</span>
               </button>
-            </div>
+            </nav>
 
             <button
               onClick={fetchDashboard}
               title="Refresh"
-              className="p-2.5 btn-pill-dark cursor-pointer"
+              className="aa-btn aa-btn--icon"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
@@ -507,19 +501,21 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                         setSelectedIdx((i) => (i - 1 + accounts.length) % accounts.length)
                       }
                       disabled={accounts.length <= 1}
-                      className="p-2 btn-pill-dark disabled:opacity-30 cursor-pointer"
+                      className="aa-btn aa-btn--icon"
+                      aria-label="บอทก่อนหน้า"
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
 
-                    <div className="px-6 py-1.5 rounded-full border border-red-500/50 bg-[#260e14] text-sm font-bold tracking-wider shadow-[0_0_18px_rgba(220,38,38,0.3)]">
+                    <div className="aa-btn aa-btn--level">
                       {level > 0 ? `LV. ${level}` : activeAccount.bot_name}
                     </div>
 
                     <button
                       onClick={() => setSelectedIdx((i) => (i + 1) % accounts.length)}
                       disabled={accounts.length <= 1}
-                      className="p-2 btn-pill-dark disabled:opacity-30 cursor-pointer"
+                      className="aa-btn aa-btn--icon"
+                      aria-label="บอทถัดไป"
                     >
                       <ChevronRight className="w-4 h-4" />
                     </button>
@@ -692,14 +688,14 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
 
                   {/* Top Rarity Tabs & Filter */}
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3">
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2" role="group" aria-label="กรองตามความหายาก">
                       {(['ALL', 'Secret', 'Mythic', 'Legendary'] as const).map((r) => (
                         <button
                           key={r}
                           onClick={() => setRarityFilter(r)}
-                          className={`px-4 py-1.5 text-xs font-semibold cursor-pointer ${
-                            rarityFilter === r ? 'btn-pill-primary' : 'btn-pill-dark'
-                          }`}
+                          data-rarity={r === 'ALL' ? undefined : r.toLowerCase()}
+                          aria-pressed={rarityFilter === r}
+                          className="aa-chip"
                         >
                           {r === 'ALL' ? 'ทั้งหมด' : r}
                         </button>
@@ -841,9 +837,8 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                   <button
                     key={h}
                     onClick={() => setHours(h)}
-                    className={`px-4 py-1.5 text-xs font-semibold cursor-pointer ${
-                      hours === h ? 'btn-pill-primary' : 'btn-pill-dark'
-                    }`}
+                    aria-pressed={hours === h}
+                    className="aa-chip"
                   >
                     {h === 1 ? '1 ชม. ล่าสุด' : h === 24 ? '24 ชม. ล่าสุด' : '7 วันล่าสุด'}
                   </button>
@@ -851,7 +846,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
               </div>
               <button
                 onClick={handleClearLogs}
-                className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold btn-pill-dark text-rose-300 cursor-pointer"
+                className="aa-btn aa-btn--danger"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 ล้างประวัติ
@@ -1081,7 +1076,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                 </div>
                 <button
                   type="submit"
-                  className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold btn-pill-primary cursor-pointer"
+                  className="aa-btn aa-btn--primary"
                 >
                   <Plus className="w-4 h-4" />
                   Create API Key
