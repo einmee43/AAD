@@ -494,35 +494,82 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                     </span>
                   </div>
 
-                  {/* Avatar on Glowing Pedestal */}
-                  <div className="relative flex flex-col items-center justify-center py-4 my-1">
-                    {/* Starburst Aura */}
+                  {/* 3D Avatar Stage & Layered Pedestal */}
+                  <div className="relative flex flex-col items-center justify-end h-64 my-2 rounded-2xl overflow-hidden border border-red-500/20 bg-gradient-to-b from-[#16080c]/85 via-[#0d0508]/90 to-[#080305]">
+                    {/* Ambient 3D Stage Backdrop (lightweight CSS) */}
                     <div
-                      className={`absolute w-48 h-48 rounded-full blur-2xl pointer-events-none ${
-                        isKage ? 'bg-red-600/20' : 'bg-purple-600/20'
-                      }`}
+                      className="absolute inset-0 pointer-events-none opacity-45"
+                      style={{
+                        backgroundImage:
+                          'radial-gradient(ellipse 75% 55% at 50% 38%, rgba(220,38,38,0.28), transparent 70%), radial-gradient(circle at 20% 25%, rgba(249,115,22,0.12), transparent 45%), radial-gradient(circle at 80% 30%, rgba(239,68,68,0.12), transparent 45%)',
+                      }}
                     />
-                    <div className="relative z-10 h-48 flex items-center justify-center animate-float-slow">
-                      {activeAccount.roblox_user_id && avatarCache[activeAccount.roblox_user_id] ? (
-                        <img
-                          src={avatarCache[activeAccount.roblox_user_id]}
-                          alt={activeAccount.roblox_username || activeAccount.bot_name}
-                          className="h-48 w-48 rounded-3xl object-contain drop-shadow-[0_0_24px_rgba(220,38,38,0.55)]"
-                          style={{
-                            WebkitMaskImage:
-                              'radial-gradient(circle closest-side at 50% 50%, #000 58%, transparent 96%)',
-                            maskImage:
-                              'radial-gradient(circle closest-side at 50% 50%, #000 58%, transparent 96%)',
-                          }}
-                        />
-                      ) : (
-                        <div className="w-28 h-28 rounded-full border border-red-500/40 bg-red-950/50 flex items-center justify-center text-red-300">
-                          <Bot className="w-12 h-12" />
-                        </div>
-                      )}
+                    {/* 3D Perspective Floor Grid */}
+                    <div
+                      className="absolute inset-x-0 bottom-0 h-28 pointer-events-none opacity-30"
+                      style={{
+                        perspective: '260px',
+                      }}
+                    >
+                      <div
+                        className="w-full h-full origin-bottom"
+                        style={{
+                          transform: 'rotateX(65deg)',
+                          backgroundImage:
+                            'linear-gradient(to right, rgba(239,68,68,0.28) 1px, transparent 1px), linear-gradient(to bottom, rgba(239,68,68,0.28) 1px, transparent 1px)',
+                          backgroundSize: '22px 22px',
+                          WebkitMaskImage:
+                            'radial-gradient(ellipse 70% 85% at 50% 70%, #000 20%, transparent 80%)',
+                          maskImage:
+                            'radial-gradient(ellipse 70% 85% at 50% 70%, #000 20%, transparent 80%)',
+                        }}
+                      />
                     </div>
-                    {/* Glowing Pedestal Ring */}
-                    <div className="w-44 h-5 -mt-3 rounded-[100%] border-2 border-red-500/70 bg-red-500/20 animate-pedestal" />
+
+                    {/* Top & Side Vignette */}
+                    <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-[#080305] via-transparent to-[#080305]/60" />
+
+                    {/* 3D Layered Podium */}
+                    <div className="relative z-10 flex flex-col items-center mb-3">
+                      {/* Character */}
+                      <div className="relative z-20 h-44 flex items-end justify-center -mb-5 animate-float-slow">
+                        {activeAccount.roblox_user_id && avatarCache[activeAccount.roblox_user_id] ? (
+                          <img
+                            src={avatarCache[activeAccount.roblox_user_id]}
+                            alt={activeAccount.roblox_username || activeAccount.bot_name}
+                            className="h-44 w-44 object-contain select-none"
+                            style={{
+                              WebkitMaskImage:
+                                'radial-gradient(ellipse 43% 46% at 50% 48%, #000 50%, transparent 92%)',
+                              maskImage:
+                                'radial-gradient(ellipse 43% 46% at 50% 48%, #000 50%, transparent 92%)',
+                            }}
+                          />
+                        ) : (
+                          <div className="w-28 h-28 mb-4 rounded-full border border-red-500/40 bg-red-950/50 flex items-center justify-center text-red-300">
+                            <Bot className="w-12 h-12" />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Foot Contact Shadow */}
+                      <div className="relative z-10 w-24 h-3 -mb-2 rounded-full bg-black/80 blur-[3px] pointer-events-none" />
+
+                      {/* 3D Cylinder Base + Glowing Rings */}
+                      <div className="relative flex flex-col items-center" style={{ perspective: '420px' }}>
+                        {/* Top glowing disc */}
+                        <div
+                          className="relative z-10 w-44 h-14 rounded-[100%] border-2 border-red-400/80 bg-gradient-to-b from-red-500/25 via-red-950/60 to-[#140508] shadow-[0_0_26px_rgba(239,68,68,0.45)] flex items-center justify-center animate-pedestal"
+                          style={{ transform: 'rotateX(64deg)' }}
+                        >
+                          <div className="w-32 h-9 rounded-[100%] border border-red-400/45 flex items-center justify-center">
+                            <div className="w-20 h-5 rounded-[100%] border border-dashed border-red-300/40" />
+                          </div>
+                        </div>
+                        {/* 3D Podium Thickness Rim */}
+                        <div className="w-40 h-4 -mt-5 rounded-b-[100%] border-x border-b-2 border-red-500/55 bg-gradient-to-b from-red-950/90 to-[#070203] shadow-[0_8px_18px_rgba(220,38,38,0.35)]" />
+                      </div>
+                    </div>
                   </div>
 
                   {/* Bot Switcher + Level Badge */}
