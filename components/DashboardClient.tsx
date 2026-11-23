@@ -99,6 +99,18 @@ function timeAgo(iso: string) {
   return `${Math.floor(diff / 3600)} ชม. ที่แล้ว`;
 }
 
+function isJunkReward(name: string): boolean {
+  const n = (name || '').toLowerCase();
+  return (
+    n.includes('victory') ||
+    n.includes('defeat') ||
+    n.includes('first completion') ||
+    n === 'score:' ||
+    n === 'high score:' ||
+    n.includes('xp progress')
+  );
+}
+
 function getItemIcon(name: string): string | null {
   const n = name.toLowerCase();
   if (n.includes('dawn')) return '/icons/dawn_coin.jpg';
@@ -310,6 +322,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
     const lootTotals: Record<string, number> = {};
     for (const log of logs) {
       for (const r of log.rewards || []) {
+        if (isJunkReward(r.name)) continue;
         lootTotals[r.name] = (lootTotals[r.name] || 0) + (Number(r.amount) || 0);
       }
     }
@@ -794,7 +807,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                             </span>
                           </div>
                           <div className="flex flex-wrap items-center gap-1.5">
-                            {(log.rewards || []).map((r, i) => {
+                            {(log.rewards || []).filter((r) => !isJunkReward(r.name)).map((r, i) => {
                               const icon = getItemIcon(r.name);
                               const st = getRarityStyle(r.rarity, r.name);
                               return (
@@ -1005,7 +1018,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex flex-wrap gap-1.5">
-                              {(log.rewards || []).map((r, idx) => {
+                              {(log.rewards || []).filter((r) => !isJunkReward(r.name)).map((r, idx) => {
                                 const icon = getItemIcon(r.name);
                                 const st = getRarityStyle(r.rarity, r.name);
                                 return (

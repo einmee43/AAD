@@ -312,26 +312,29 @@ task.spawn(function()
                             end
                         end
                     elseif obj:IsA("Frame") or obj:IsA("ImageButton") or obj:IsA("ImageLabel") then
-                        local nLbl = obj:FindFirstChild("name") or obj:FindFirstChild("ItemName") or obj:FindFirstChild("Title")
+                        -- Only treat as an item drop if it has an explicit item name + quantity label (never generic "Title" headers)
+                        local nLbl = obj:FindFirstChild("name") or obj:FindFirstChild("ItemName")
                         local qLbl = obj:FindFirstChild("Amount") or obj:FindFirstChild("Quantity") or obj:FindFirstChild("RewardQuantity")
-                        if nLbl and nLbl:IsA("TextLabel") and #nLbl.Text > 0 and nLbl.Visible then
+                        if nLbl and qLbl and nLbl:IsA("TextLabel") and qLbl:IsA("TextLabel") and #nLbl.Text > 0 and nLbl.Visible then
                             local itemName = nLbl.Text
                             local lowName = itemName:lower()
-                            if not seenRewardNames[lowName] and not lowName:find("placeholder") and not lowName:find("xp") then
-                                local amt = 1
-                                if qLbl and qLbl:IsA("TextLabel") then
-                                    amt = tonumber((qLbl.Text:gsub("[^%d]", ""))) or 1
+                            local isJunk = lowName:find("victory") or lowName:find("defeat") or lowName:find("score")
+                                or lowName:find("first completion") or lowName:find("placeholder") or lowName:find("xp")
+                                or lowName:find("bonus") or lowName:find("wave") or lowName:find("time")
+                            if not isJunk and not seenRewardNames[lowName] then
+                                local amt = tonumber((qLbl.Text:gsub("[^%d]", "")))
+                                if amt and amt > 0 then
+                                    local rarity = "Mythic"
+                                    if lowName:find("secret") or lowName:find("portal") then rarity = "Secret"
+                                    elseif lowName:find("reroll") or lowName:find("chest") then rarity = "Legendary" end
+                                    seenRewardNames[lowName] = true
+                                    table.insert(rewards, {
+                                        name = itemName,
+                                        amount = amt,
+                                        category = "item",
+                                        rarity = rarity
+                                    })
                                 end
-                                local rarity = "Mythic"
-                                if lowName:find("secret") or lowName:find("portal") then rarity = "Secret"
-                                elseif lowName:find("reroll") or lowName:find("chest") then rarity = "Legendary" end
-                                seenRewardNames[lowName] = true
-                                table.insert(rewards, {
-                                    name = itemName,
-                                    amount = amt,
-                                    category = "item",
-                                    rarity = rarity
-                                })
                             end
                         end
                     end
