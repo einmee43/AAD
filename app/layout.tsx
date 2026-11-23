@@ -19,7 +19,7 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: "Nexty Hub — AA Drop Tracker",
+  title: "Nexty Hub - Logs",
   description: "Anime Adventures Farm & Loot Command Center",
 };
 
