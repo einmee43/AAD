@@ -96,6 +96,14 @@ function rarityBadgeClass(rarity?: string, name?: string) {
   return 'bg-zinc-800 text-zinc-200 border-zinc-700';
 }
 
+function getItemIcon(name: string): string | null {
+  const n = name.toLowerCase();
+  if (n.includes('gem')) return '/icons/gems.png';
+  if (n.includes('gold') || n.includes('coin') || n.includes('yen')) return '/icons/gold.png';
+  if (n.includes('pearl')) return '/icons/pearls.png';
+  return null;
+}
+
 export default function DashboardClient({ user }: { user: UserInfo }) {
   const [tab, setTab] = useState<'overview' | 'keys'>('overview');
   const [hours, setHours] = useState(24);
@@ -418,14 +426,26 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
 
                         {snap && Object.keys(snap.currencies || {}).length > 0 && (
                           <div className="flex flex-wrap gap-1.5 pt-1">
-                            {Object.entries(snap.currencies).map(([k, v]) => (
-                              <span
-                                key={k}
-                                className="text-[11px] px-2 py-0.5 rounded-md bg-indigo-500/10 border border-indigo-500/20 text-indigo-300"
-                              >
-                                {k}: {Number(v).toLocaleString()}
-                              </span>
-                            ))}
+                            {Object.entries(snap.currencies).map(([k, v]) => {
+                              const icon = getItemIcon(k);
+                              return (
+                                <span
+                                  key={k}
+                                  className="inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-md bg-indigo-500/10 border border-indigo-500/20 text-indigo-200"
+                                >
+                                  {icon && (
+                                    <img
+                                      src={icon}
+                                      alt={k}
+                                      className="w-3.5 h-3.5 object-contain shrink-0"
+                                    />
+                                  )}
+                                  <span>
+                                    {k}: <strong>{Number(v).toLocaleString()}</strong>
+                                  </span>
+                                </span>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -444,17 +464,29 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                 <div className="flex flex-wrap gap-2">
                   {Object.entries(analytics.lootTotals)
                     .sort((a, b) => b[1] - a[1])
-                    .map(([name, amount]) => (
-                      <span
-                        key={name}
-                        className={`text-xs px-2.5 py-1 rounded-lg border font-medium ${rarityBadgeClass(
-                          undefined,
-                          name
-                        )}`}
-                      >
-                        {name}: <strong className="ml-1">+{amount.toLocaleString()}</strong>
-                      </span>
-                    ))}
+                    .map(([name, amount]) => {
+                      const icon = getItemIcon(name);
+                      return (
+                        <span
+                          key={name}
+                          className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border font-medium ${rarityBadgeClass(
+                            undefined,
+                            name
+                          )}`}
+                        >
+                          {icon && (
+                            <img
+                              src={icon}
+                              alt={name}
+                              className="w-4 h-4 object-contain shrink-0"
+                            />
+                          )}
+                          <span>
+                            {name}: <strong className="ml-1">+{amount.toLocaleString()}</strong>
+                          </span>
+                        </span>
+                      );
+                    })}
                 </div>
               </section>
             )}
@@ -542,17 +574,29 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex flex-wrap gap-1.5">
-                              {(log.rewards || []).map((r, idx) => (
-                                <span
-                                  key={idx}
-                                  className={`px-2 py-0.5 rounded border text-[11px] ${rarityBadgeClass(
-                                    r.rarity,
-                                    r.name
-                                  )}`}
-                                >
-                                  {r.name} x{r.amount}
-                                </span>
-                              ))}
+                              {(log.rewards || []).map((r, idx) => {
+                                const icon = getItemIcon(r.name);
+                                return (
+                                  <span
+                                    key={idx}
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[11px] ${rarityBadgeClass(
+                                      r.rarity,
+                                      r.name
+                                    )}`}
+                                  >
+                                    {icon && (
+                                      <img
+                                        src={icon}
+                                        alt={r.name}
+                                        className="w-3.5 h-3.5 object-contain shrink-0"
+                                      />
+                                    )}
+                                    <span>
+                                      {r.name} x{r.amount}
+                                    </span>
+                                  </span>
+                                );
+                              })}
                             </div>
                           </td>
                         </tr>
