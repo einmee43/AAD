@@ -1392,79 +1392,132 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-[#0e0608] text-red-300/70 border-b border-red-500/20">
-                    <tr>
-                      <th className="px-4 py-3 font-medium">เวลา</th>
-                      <th className="px-4 py-3 font-medium">บอท</th>
-                      <th className="px-4 py-3 font-medium">โหมด / ด่าน</th>
-                      <th className="px-4 py-3 font-medium">ผลลัพธ์</th>
-                      <th className="px-4 py-3 font-medium">เวลาที่ใช้</th>
-                      <th className="px-4 py-3 font-medium">ของที่ได้</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-red-500/10">
-                    {filteredLogs.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
-                          ไม่พบประวัติการฟาร์ม
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredLogs.map((log) => (
-                        <tr key={log.id} className="hover:bg-red-500/5">
-                          <td className="px-4 py-3 text-zinc-400 whitespace-nowrap">
-                            {timeAgo(log.created_at)}
-                          </td>
-                          <td className="px-4 py-3 font-medium whitespace-nowrap">{log.bot_name}</td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            <span className="text-zinc-400">{log.mode}</span> • {log.map_name}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
-                                log.result === 'Win'
-                                  ? 'bg-emerald-500/15 text-emerald-400'
-                                  : 'bg-rose-500/15 text-rose-400'
-                              }`}
-                            >
-                              {log.result}
+              <div className="divide-y divide-red-500/10">
+                {filteredLogs.length === 0 ? (
+                  <div className="px-4 py-10 text-center text-xs text-zinc-500">
+                    ไม่พบประวัติการฟาร์ม
+                  </div>
+                ) : (
+                  filteredLogs.map((log) => {
+                    const lowMap = (log.map_name || '').toLowerCase();
+                    const lowMode = (log.mode || '').toLowerCase();
+                    const isPortal = lowMode.includes('portal') || lowMap.includes('portal');
+                    const isSky = lowMap.includes('sky');
+                    const isDungeon = lowMode.includes('dungeon') || lowMap.includes('dungeon');
+                    const isChallenge = lowMap.includes('challenge');
+
+                    const thumbGradient = isSky
+                      ? 'from-sky-500/70 via-indigo-700/75 to-[#0b1024]'
+                      : isPortal
+                      ? 'from-fuchsia-600/70 via-purple-800/75 to-[#12071d]'
+                      : isDungeon
+                      ? 'from-red-600/70 via-rose-900/75 to-[#160508]'
+                      : isChallenge
+                      ? 'from-amber-500/70 via-orange-800/75 to-[#190d05]'
+                      : 'from-rose-600/60 via-red-900/75 to-[#120609]';
+
+                    const modeLabel = isPortal
+                      ? 'Portal'
+                      : isDungeon
+                      ? 'Dungeon'
+                      : isChallenge
+                      ? 'Challenge'
+                      : log.mode || 'Match';
+
+                    const d = new Date(log.created_at);
+                    const hhmm = d.toLocaleTimeString('th-TH', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: false,
+                    });
+                    const ddmm = `${String(d.getDate()).padStart(2, '0')}/${String(
+                      d.getMonth() + 1
+                    ).padStart(2, '0')}`;
+
+                    const cleanRewards = (log.rewards || []).filter((r) => !isJunkReward(r.name));
+
+                    return (
+                      <div
+                        key={log.id}
+                        className="p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-red-500/5 transition-colors"
+                      >
+                        <div className="flex items-start gap-3.5 min-w-0">
+                          {/* Stylized Map Thumbnail */}
+                          <div
+                            className={`relative w-28 sm:w-32 h-[68px] rounded-xl overflow-hidden shrink-0 border border-white/15 bg-gradient-to-br ${thumbGradient}`}
+                          >
+                            <div className="absolute -top-3 -right-3 w-12 h-12 rounded-full bg-white/15 blur-md" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent" />
+                            <span className="absolute bottom-1.5 left-2 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/60 text-white/95 backdrop-blur-sm">
+                              {modeLabel}
                             </span>
-                          </td>
-                          <td className="px-4 py-3 text-zinc-300 whitespace-nowrap">
-                            {formatDuration(log.duration_sec)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex flex-wrap gap-1.5">
-                              {(log.rewards || []).filter((r) => !isJunkReward(r.name)).map((r, idx) => {
-                                const icon = getItemIcon(r.name);
-                                const st = getRarityStyle(r.rarity, r.name);
-                                return (
-                                  <span
-                                    key={idx}
-                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] ${st.badge}`}
-                                  >
-                                    {icon && (
-                                      <img
-                                        src={icon}
-                                        alt={r.name}
-                                        className="w-3.5 h-3.5 object-contain shrink-0"
-                                      />
-                                    )}
-                                    <span>
-                                      {r.name} x{r.amount.toLocaleString()}
-                                    </span>
-                                  </span>
-                                );
-                              })}
+                          </div>
+
+                          {/* Center Info & Reward Chips */}
+                          <div className="min-w-0 space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span
+                                className={`text-sm font-bold ${
+                                  log.result === 'Win' ? 'text-emerald-400' : 'text-rose-400'
+                                }`}
+                              >
+                                {log.result === 'Win' ? 'ชนะ' : 'แพ้'}
+                              </span>
+                              <span className="text-sm font-bold text-white truncate">
+                                {log.map_name}
+                              </span>
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-200">
+                                {log.bot_name}
+                              </span>
                             </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+
+                            <div className="text-xs text-zinc-400">
+                              {log.mode} • {formatDuration(log.duration_sec)}
+                            </div>
+
+                            {cleanRewards.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                {cleanRewards.map((r, idx) => {
+                                  const icon = getItemIcon(r.name);
+                                  return (
+                                    <span
+                                      key={idx}
+                                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#090506] border border-white/10 text-xs font-semibold text-zinc-100"
+                                    >
+                                      {icon ? (
+                                        <img
+                                          src={icon}
+                                          alt={r.name}
+                                          className="w-4 h-4 object-contain shrink-0"
+                                        />
+                                      ) : (
+                                        <Sparkles className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                                      )}
+                                      <span>{r.name}</span>
+                                      <span className="text-zinc-300 font-bold">
+                                        ×{r.amount.toLocaleString()}
+                                      </span>
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Right Timestamp */}
+                        <div className="text-right shrink-0 sm:pl-4">
+                          <div className="text-xs font-medium text-zinc-400 tabular-nums">
+                            {hhmm} • {ddmm}
+                          </div>
+                          <div className="text-[11px] text-zinc-500 mt-0.5">
+                            {timeAgo(log.created_at)}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </section>
           </div>
