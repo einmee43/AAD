@@ -510,9 +510,9 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                           className="h-48 w-48 rounded-3xl object-contain drop-shadow-[0_0_24px_rgba(220,38,38,0.55)]"
                           style={{
                             WebkitMaskImage:
-                              'radial-gradient(ellipse 74% 78% at 50% 50%, #000 55%, transparent 98%)',
+                              'radial-gradient(circle closest-side at 50% 50%, #000 58%, transparent 96%)',
                             maskImage:
-                              'radial-gradient(ellipse 74% 78% at 50% 50%, #000 55%, transparent 98%)',
+                              'radial-gradient(circle closest-side at 50% 50%, #000 58%, transparent 96%)',
                           }}
                         />
                       ) : (
