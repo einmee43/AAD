@@ -332,8 +332,11 @@ local function detectState()
             local lLbl = lt:FindFirstChild("Level")
             if lLbl and lLbl:IsA("TextLabel") and #lLbl.Text > 0 then
                 local lvlTxt = lLbl.Text
-                if lvlTxt:lower():find("dungeon") or lvlTxt:lower():find("depth") then
+                local lowLvl = lvlTxt:lower()
+                if lowLvl:find("dungeon") or lowLvl:find("depth") then
                     mode = "Dungeon"
+                elseif lowLvl:find("portal") then
+                    mode = "Portal"
                 end
                 mapName = lvlTxt
             elseif mLbl and mLbl:IsA("TextLabel") and #mLbl.Text > 0 then
@@ -458,15 +461,20 @@ task.spawn(function()
                         if low:find("defeat") or low:find("lose") then
                             resultStatus = "Lose"
                         elseif obj.Name == "LevelName" or obj.Name == "MapName" then
-                            mapName = txt
                             if low:find("dungeon") or low:find("depth") then
                                 mode = "Dungeon"
+                                mapName = txt
+                            elseif low:find("portal") or low:find("sky") then
+                                mode = "Portal"
+                                mapName = txt
+                            elseif mode ~= "Portal" and not low:find("ultimate fighting squadron") then
+                                mapName = txt
                             end
                         end
                     elseif obj:IsA("Frame") or obj:IsA("ImageButton") or obj:IsA("ImageLabel") then
-                        -- Only treat as an item drop if it has an explicit item name + quantity label (never generic "Title" headers)
-                        local nLbl = obj:FindFirstChild("name") or obj:FindFirstChild("ItemName")
-                        local qLbl = obj:FindFirstChild("Amount") or obj:FindFirstChild("Quantity") or obj:FindFirstChild("RewardQuantity")
+                        -- Only treat as an item drop if it has an explicit item name + quantity label
+                        local nLbl = obj:FindFirstChild("name", true) or obj:FindFirstChild("ItemName", true)
+                        local qLbl = obj:FindFirstChild("Amount", true) or obj:FindFirstChild("Quantity", true) or obj:FindFirstChild("RewardQuantity", true)
                         if nLbl and qLbl and nLbl:IsA("TextLabel") and qLbl:IsA("TextLabel") and #nLbl.Text > 0 and nLbl.Visible then
                             local itemName = nLbl.Text
                             local lowName = itemName:lower()

@@ -199,6 +199,8 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   // Key form state
   const [newLabel, setNewLabel] = useState('MuMu Farm');
   const [newWebhook, setNewWebhook] = useState('');
+  const [webhookDrafts, setWebhookDrafts] = useState<Record<string, string>>({});
+  const [savingWebhookId, setSavingWebhookId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [keyError, setKeyError] = useState<string | null>(null);
 
@@ -301,6 +303,23 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   const handleDeleteKey = async (id: string) => {
     await fetch(`/api/keys?id=${id}`, { method: 'DELETE' });
     fetchKeys();
+  };
+
+  const handleSaveWebhook = async (id: string, currentVal: string) => {
+    setSavingWebhookId(id);
+    setKeyError(null);
+    const res = await fetch('/api/keys', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, discord_webhook_url: currentVal.trim() || null }),
+    });
+    setSavingWebhookId(null);
+    if (res.ok) {
+      fetchKeys();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      setKeyError(data.error || `Failed (${res.status})`);
+    }
   };
 
   const handleClearLogs = async () => {
@@ -1365,41 +1384,65 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-red-300/70">
                   Keys ของคุณ ({keys.length})
                 </h3>
-                {keys.map((k) => (
-                  <div
-                    key={k.id}
-                    className="rounded-xl border border-red-500/20 bg-[#090506]/80 p-3 flex items-center justify-between gap-3"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-xs font-semibold">{k.label}</div>
-                      <div className="text-xs font-mono text-red-300 truncate">{k.api_key}</div>
-                      <div className="text-[11px] text-zinc-500 mt-0.5">
-                        ใช้งานล่าสุด: {k.last_used_at ? timeAgo(k.last_used_at) : 'ยังไม่เคยใช้'}
-                        {k.discord_webhook_url ? ' • Discord Alert ON' : ''}
+                {keys.map((k) => {
+                  const draft = webhookDrafts[k.id] ?? (k.discord_webhook_url || '');
+                  return (
+                    <div
+                      key={k.id}
+                      className="rounded-xl border border-red-500/20 bg-[#090506]/80 p-3 space-y-2.5"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold">{k.label}</div>
+                          <div className="text-xs font-mono text-red-300 truncate">{k.api_key}</div>
+                          <div className="text-[11px] text-zinc-500 mt-0.5">
+                            ใช้งานล่าสุด: {k.last_used_at ? timeAgo(k.last_used_at) : 'ยังไม่เคยใช้'}
+                            {k.discord_webhook_url ? ' • Discord Alert ON' : ' • ยังไม่ใส่ Webhook'}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            onClick={() => copyText(k.id, k.api_key)}
+                            className="p-2 rounded-lg bg-[#1a0b0f] hover:bg-red-500/20 text-zinc-300 cursor-pointer"
+                            title="Copy API Key"
+                          >
+                            {copiedId === k.id ? (
+                              <Check className="w-4 h-4 text-emerald-400" />
+                            ) : (
+                              <Copy className="w-4 h-4" />
+                            )}
+                          </button>
+                          <button
+                            onClick={() => handleDeleteKey(k.id)}
+                            className="p-2 rounded-lg bg-[#1a0b0f] hover:bg-rose-500/20 text-zinc-400 hover:text-rose-400 cursor-pointer"
+                            title="Delete Key"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1 border-t border-white/5">
+                        <input
+                          value={draft}
+                          onChange={(e) =>
+                            setWebhookDrafts((prev) => ({ ...prev, [k.id]: e.target.value }))
+                          }
+                          placeholder="วาง Discord Webhook URL เพื่อแจ้งเตือน Portal / Rare Drop..."
+                          className="flex-1 px-2.5 py-1.5 text-[11px] rounded-lg bg-[#12070a] border border-red-500/20 focus:outline-none focus:border-red-400 text-zinc-200"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleSaveWebhook(k.id, draft)}
+                          disabled={savingWebhookId === k.id}
+                          className="px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-red-600/25 hover:bg-red-600/40 border border-red-500/40 text-red-100 cursor-pointer shrink-0 disabled:opacity-50"
+                        >
+                          {savingWebhookId === k.id ? 'กำลังบันทึก...' : 'บันทึก Webhook'}
+                        </button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        onClick={() => copyText(k.id, k.api_key)}
-                        className="p-2 rounded-lg bg-[#1a0b0f] hover:bg-red-500/20 text-zinc-300 cursor-pointer"
-                        title="Copy API Key"
-                      >
-                        {copiedId === k.id ? (
-                          <Check className="w-4 h-4 text-emerald-400" />
-                        ) : (
-                          <Copy className="w-4 h-4" />
-                        )}
-                      </button>
-                      <button
-                        onClick={() => handleDeleteKey(k.id)}
-                        className="p-2 rounded-lg bg-[#1a0b0f] hover:bg-rose-500/20 text-zinc-400 hover:text-rose-400 cursor-pointer"
-                        title="Delete Key"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
 
@@ -1414,7 +1457,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
     API_KEY  = "${keys[0]?.api_key || 'PASTE_YOUR_API_KEY_HERE'}",
     BOT_NAME = "Bot 1" -- จอ 2 เปลี่ยนเป็น "Bot 2"
 }
-loadstring(game:HttpGet("https://raw.githubusercontent.com/einmee43/AAD/main/aa_tracker.lua"))()`}
+loadstring(game:HttpGet("https://raw.githubusercontent.com/einmee43/AAD/main/aa_tracker.lua?v=" .. tostring(os.time())))()`}
               </pre>
             </section>
           </div>

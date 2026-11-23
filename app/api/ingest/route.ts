@@ -24,26 +24,47 @@ async function sendDiscordAlert(
   mapName: string,
   result: string,
   durationSec: number,
+  allRewards: RewardItem[],
   rareItems: RewardItem[]
 ) {
   try {
     const mins = Math.floor(durationSec / 60);
     const secs = durationSec % 60;
-    const itemLines = rareItems.map((i) => `• **${i.name}** x${i.amount}`).join('\n');
+    const isPortal =
+      mode.toLowerCase().includes('portal') || mapName.toLowerCase().includes('portal');
+
+    const title =
+      rareItems.length > 0
+        ? `✨ Rare Drop! (${botName})`
+        : isPortal
+        ? `${result === 'Win' ? '🌌' : '💀'} Portal ${result === 'Win' ? 'Cleared' : 'Failed'}! (${botName})`
+        : `🎮 Run ${result} (${botName})`;
+
+    const rareNames = new Set(rareItems.map((i) => i.name.toLowerCase()));
+    const rewardLines =
+      allRewards.length > 0
+        ? allRewards
+            .map((i) => {
+              const tag = rareNames.has(i.name.toLowerCase()) ? '🔥 **[RARE]** ' : '• ';
+              return `${tag}**${i.name}** x${Number(i.amount || 0).toLocaleString()}`;
+            })
+            .join('\n')
+        : 'ไม่มีข้อมูลของดรอป (หรือไม่ได้รับเพิ่ม)';
 
     await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        username: 'AA Drop Tracker',
+        username: 'Nexty Hub Tracker',
         embeds: [
           {
-            title: `✨ Rare Drop Detected! (${botName})`,
-            color: result === 'Win' ? 0x22c55e : 0xef4444,
+            title,
+            color:
+              rareItems.length > 0 ? 0xf59e0b : result === 'Win' ? 0x22c55e : 0xef4444,
             fields: [
-              { name: 'Mode / Map', value: `${mode} — ${mapName}`, inline: true },
-              { name: 'Result / Time', value: `${result} (${mins}m ${secs}s)`, inline: true },
-              { name: 'Rare Rewards', value: itemLines || 'None', inline: false },
+              { name: 'โหมด / ด่าน', value: `${mode} — ${mapName}`, inline: true },
+              { name: 'ผลลัพธ์ / เวลา', value: `${result} (${mins}m ${secs}s)`, inline: true },
+              { name: 'ของรางวัลที่ได้', value: rewardLines.slice(0, 1000), inline: false },
             ],
             timestamp: new Date().toISOString(),
           },
@@ -196,9 +217,11 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: logErr.message }, { status: 500 });
       }
 
-      if (keyRow.discord_webhook_url && keyRow.alert_on_rare) {
+      if (keyRow.discord_webhook_url) {
         const rareItems = rewards.filter(isRareReward);
-        if (rareItems.length > 0) {
+        const isPortalRun =
+          mode.toLowerCase().includes('portal') || mapName.toLowerCase().includes('portal');
+        if ((keyRow.alert_on_rare && rareItems.length > 0) || isPortalRun) {
           await sendDiscordAlert(
             keyRow.discord_webhook_url,
             botName,
@@ -206,6 +229,7 @@ export async function POST(request: Request) {
             mapName,
             result,
             durationSec,
+            rewards,
             rareItems
           );
         }
