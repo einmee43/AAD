@@ -5,9 +5,11 @@ import { createClient } from '@/lib/supabase/client';
 import {
   Activity,
   Bot,
+  Check,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Copy,
-  Check,
   KeyRound,
   LogOut,
   Plus,
@@ -15,8 +17,8 @@ import {
   Search,
   Sparkles,
   Trash2,
-  Trophy,
   TrendingUp,
+  Trophy,
 } from 'lucide-react';
 
 interface UserInfo {
@@ -29,12 +31,14 @@ interface Account {
   id: string;
   bot_name: string;
   roblox_username?: string;
+  roblox_user_id?: number;
   status: string;
   live_status: 'farming' | 'lobby' | 'offline';
   current_mode?: string;
   current_map?: string;
   current_wave?: string;
   last_heartbeat: string;
+  started_at?: string;
 }
 
 interface RewardItem {
@@ -71,29 +75,25 @@ interface ApiKeyRow {
   last_used_at: string | null;
 }
 
+function formatCompact(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 10_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toLocaleString();
+}
+
 function formatDuration(sec: number) {
-  const m = Math.floor(sec / 60);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
+  if (h > 0) return `${h} ชม. ${m} น.`;
   return `${m}m ${s}s`;
 }
 
 function timeAgo(iso: string) {
   const diff = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  return `${Math.floor(diff / 3600)}h ago`;
-}
-
-function rarityBadgeClass(rarity?: string, name?: string) {
-  const r = (rarity || '').toLowerCase();
-  const n = (name || '').toLowerCase();
-  if (r === 'secret' || n.includes('secret'))
-    return 'bg-rose-500/15 text-rose-300 border-rose-500/40';
-  if (r === 'mythic' || n.includes('mythic') || n.includes('portal') || n.includes('gold chest'))
-    return 'bg-amber-500/15 text-amber-300 border-amber-500/40';
-  if (r === 'legendary' || n.includes('reroll') || n.includes('star'))
-    return 'bg-purple-500/15 text-purple-300 border-purple-500/40';
-  return 'bg-zinc-800 text-zinc-200 border-zinc-700';
+  if (diff < 60) return `${diff} วิ ที่แล้ว`;
+  if (diff < 3600) return `${Math.floor(diff / 60)} นาทีที่แล้ว`;
+  return `${Math.floor(diff / 3600)} ชม. ที่แล้ว`;
 }
 
 function getItemIcon(name: string): string | null {
@@ -101,17 +101,55 @@ function getItemIcon(name: string): string | null {
   if (n.includes('gem')) return '/icons/gems.png';
   if (n.includes('gold') || n.includes('coin') || n.includes('yen')) return '/icons/gold.png';
   if (n.includes('pearl')) return '/icons/pearls.png';
+  if (n.includes('perfect') && n.includes('cube')) return '/icons/perfect_stat_cube.png';
+  if (n.includes('cube')) return '/icons/stat_cube.png';
+  if (n.includes('remnant')) return '/icons/star_remnant.png';
+  if (n.includes('portal') && (n.includes('secret') || n.includes('explosion') || n.includes('demon')))
+    return '/icons/portal_secret.png';
+  if (n.includes('portal')) return '/icons/portal_mythic.png';
   return null;
 }
 
+function getRarityStyle(rarity?: string, name?: string) {
+  const r = (rarity || '').toLowerCase();
+  const n = (name || '').toLowerCase();
+  if (r === 'secret' || n.includes('secret') || n.includes('explosion') || n.includes('demon')) {
+    return {
+      label: 'Secret',
+      card: 'border-rose-500/60 bg-gradient-to-b from-rose-950/50 to-[#140d1d] shadow-[0_0_20px_rgba(244,63,94,0.18)]',
+      text: 'text-rose-400',
+      badge: 'bg-rose-500/15 text-rose-300 border-rose-500/40',
+    };
+  }
+  if (r === 'legendary' || n.includes('reroll') || n.includes('star')) {
+    return {
+      label: 'Legendary',
+      card: 'border-amber-500/50 bg-gradient-to-b from-amber-950/35 to-[#140d1d] shadow-[0_0_16px_rgba(245,158,11,0.12)]',
+      text: 'text-amber-400',
+      badge: 'bg-amber-500/15 text-amber-300 border-amber-500/40',
+    };
+  }
+  return {
+    label: 'Mythic',
+    card: 'border-purple-500/50 bg-gradient-to-b from-purple-950/45 to-[#130e24] shadow-[0_0_18px_rgba(168,85,247,0.16)]',
+    text: 'text-purple-400',
+    badge: 'bg-purple-500/15 text-purple-300 border-purple-500/40',
+  };
+}
+
 export default function DashboardClient({ user }: { user: UserInfo }) {
-  const [tab, setTab] = useState<'overview' | 'keys'>('overview');
+  const [tab, setTab] = useState<'profile' | 'history' | 'keys'>('profile');
   const [hours, setHours] = useState(24);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [selectedIdx, setSelectedIdx] = useState(0);
   const [logs, setLogs] = useState<RunLog[]>([]);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [keys, setKeys] = useState<ApiKeyRow[]>([]);
+  const [avatarCache, setAvatarCache] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
+
+  // Filters
+  const [rarityFilter, setRarityFilter] = useState<'ALL' | 'Secret' | 'Mythic' | 'Legendary'>('ALL');
   const [search, setSearch] = useState('');
   const [botFilter, setBotFilter] = useState('ALL');
   const [resultFilter, setResultFilter] = useState('ALL');
@@ -152,6 +190,23 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
     return () => clearInterval(timer);
   }, [fetchDashboard, fetchKeys]);
 
+  // Keep selectedIdx valid
+  const activeAccount = accounts[selectedIdx] || accounts[0] || null;
+
+  // Fetch Roblox Avatar PNG for active account
+  useEffect(() => {
+    const uid = activeAccount?.roblox_user_id;
+    if (!uid || avatarCache[uid]) return;
+    fetch(`/api/avatar?userId=${uid}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.imageUrl) {
+          setAvatarCache((prev) => ({ ...prev, [uid]: d.imageUrl }));
+        }
+      })
+      .catch(() => {});
+  }, [activeAccount?.roblox_user_id, avatarCache]);
+
   const handleSignOut = async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
@@ -180,11 +235,40 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
     fetchKeys();
   };
 
+  const handleClearLogs = async () => {
+    if (!confirm('ลบประวัติ Run Logs ทั้งหมดใช่ไหมครับ?')) return;
+    const res = await fetch('/api/dashboard?action=clear_logs', { method: 'DELETE' });
+    if (res.ok) fetchDashboard();
+  };
+
   const copyText = (id: string, text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 1500);
   };
+
+  const snapshotMap = useMemo(() => {
+    const map = new Map<string, Snapshot>();
+    snapshots.forEach((s) => map.set(s.account_id, s));
+    return map;
+  }, [snapshots]);
+
+  const activeSnap = activeAccount ? snapshotMap.get(activeAccount.id) : undefined;
+  const activeCurrencies = activeSnap?.currencies || {};
+  const level = activeCurrencies['_level'] || 0;
+  const xp = activeCurrencies['_xp'] || 0;
+  const xpPct = level > 0 ? Math.min(100, Math.round((xp / Math.max(100, level * 15)) * 100)) : 0;
+
+  // Filtered inventory items for active bot
+  const activeItems = useMemo(() => {
+    const list = activeSnap?.items || [];
+    return list.filter((it) => {
+      const style = getRarityStyle(it.rarity, it.name);
+      if (rarityFilter !== 'ALL' && style.label !== rarityFilter) return false;
+      if (search.trim() && !it.name.toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    });
+  }, [activeSnap?.items, rarityFilter, search]);
 
   // Filtered logs
   const filteredLogs = useMemo(() => {
@@ -201,15 +285,13 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
     });
   }, [logs, botFilter, resultFilter, search]);
 
-  // Aggregated analytics
+  // Analytics
   const analytics = useMemo(() => {
     const totalRuns = logs.length;
     const wins = logs.filter((l) => l.result === 'Win').length;
     const winrate = totalRuns > 0 ? Math.round((wins / totalRuns) * 100) : 0;
-    const avgSec =
-      totalRuns > 0
-        ? Math.round(logs.reduce((acc, l) => acc + (l.duration_sec || 0), 0) / totalRuns)
-        : 0;
+    const totalSec = logs.reduce((acc, l) => acc + (l.duration_sec || 0), 0);
+    const avgSec = totalRuns > 0 ? Math.round(totalSec / totalRuns) : 0;
 
     const lootTotals: Record<string, number> = {};
     for (const log of logs) {
@@ -219,73 +301,95 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
     }
 
     const totalHours = Math.max(1 / 60, hours);
-    const gemsTotal = lootTotals['Gems'] || 0;
-    const gemsPerHr = Math.round(gemsTotal / totalHours);
-
+    const gemsPerHr = Math.round((lootTotals['Gems'] || 0) / totalHours);
     const onlineCount = accounts.filter((a) => a.live_status !== 'offline').length;
 
-    return { totalRuns, winrate, avgSec, lootTotals, gemsPerHr, onlineCount };
+    return { totalRuns, winrate, totalSec, avgSec, lootTotals, gemsPerHr, onlineCount };
   }, [logs, accounts, hours]);
 
-  const snapshotMap = useMemo(() => {
-    const map = new Map<string, Snapshot>();
-    snapshots.forEach((s) => map.set(s.account_id, s));
-    return map;
-  }, [snapshots]);
-
-  const originUrl = typeof window !== 'undefined' ? window.location.origin : 'https://your-app.vercel.app';
+  const originUrl =
+    typeof window !== 'undefined' ? window.location.origin : 'https://aad-hazel.vercel.app';
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+    <div className="min-h-screen bg-[#090714] text-zinc-100 relative overflow-x-hidden">
+      {/* Ambient Cyber Purple Glow */}
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_top_left,_rgba(139,92,246,0.18),_transparent_50%),radial-gradient(ellipse_at_bottom_right,_rgba(99,102,241,0.14),_transparent_50%)]" />
+
       {/* Top Navbar */}
-      <header className="sticky top-0 z-20 border-b border-zinc-800/80 bg-zinc-950/90 backdrop-blur">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+      <header className="sticky top-0 z-20 border-b border-purple-500/20 bg-[#0d0a1c]/85 backdrop-blur-xl">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+            <div className="h-9 w-9 rounded-xl bg-purple-600/25 border border-purple-400/40 flex items-center justify-center text-purple-300 shadow-[0_0_15px_rgba(168,85,247,0.3)]">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="font-bold text-sm sm:text-base leading-tight">AA Drop Tracker</h1>
-              <p className="text-[11px] text-zinc-400 hidden sm:block">
-                Supabase + Discord Real-time Monitor
+              <h1 className="font-bold text-sm sm:text-base tracking-wide bg-gradient-to-r from-white to-purple-300 bg-clip-text text-transparent">
+                AA DROP TRACKER
+              </h1>
+              <p className="text-[11px] text-purple-300/60 hidden sm:block">
+                Anime Adventures Command Center
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            <div className="flex rounded-lg bg-zinc-900 border border-zinc-800 p-0.5 text-xs">
+            <div className="flex rounded-xl bg-[#15102b] border border-purple-500/25 p-1 text-xs">
               <button
-                onClick={() => setTab('overview')}
-                className={`px-3 py-1.5 rounded-md font-medium transition cursor-pointer ${
-                  tab === 'overview' ? 'bg-indigo-600 text-white' : 'text-zinc-400 hover:text-white'
+                onClick={() => setTab('profile')}
+                className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer ${
+                  tab === 'profile'
+                    ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-500/25'
+                    : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                Dashboard
+                โปรไฟล์ &amp; คลัง
+              </button>
+              <button
+                onClick={() => setTab('history')}
+                className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer ${
+                  tab === 'history'
+                    ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-500/25'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                ประวัติดรอป
               </button>
               <button
                 onClick={() => setTab('keys')}
-                className={`px-3 py-1.5 rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
-                  tab === 'keys' ? 'bg-indigo-600 text-white' : 'text-zinc-400 hover:text-white'
+                className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                  tab === 'keys'
+                    ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-500/25'
+                    : 'text-zinc-400 hover:text-white'
                 }`}
               >
                 <KeyRound className="w-3.5 h-3.5" />
-                API Keys
+                <span className="hidden sm:inline">API Keys</span>
               </button>
             </div>
 
-            <div className="flex items-center gap-2 pl-2 border-l border-zinc-800">
+            <button
+              onClick={fetchDashboard}
+              title="Refresh"
+              className="p-2 rounded-xl bg-[#15102b] border border-purple-500/25 text-purple-300 hover:text-white hover:border-purple-400/50 transition cursor-pointer"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+
+            <div className="flex items-center gap-2 pl-2 border-l border-purple-500/20">
               {user.avatar && (
                 <img
                   src={user.avatar}
                   alt={user.name}
-                  className="w-7 h-7 rounded-full border border-zinc-700"
+                  className="w-7 h-7 rounded-full border border-purple-400/50"
                 />
               )}
-              <span className="text-xs font-medium hidden md:inline">{user.name}</span>
+              <span className="text-xs font-medium hidden md:inline text-purple-100">
+                {user.name}
+              </span>
               <button
                 onClick={handleSignOut}
                 title="Sign out"
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition cursor-pointer"
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-purple-500/20 transition cursor-pointer"
               >
                 <LogOut className="w-4 h-4" />
               </button>
@@ -294,40 +398,369 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {tab === 'overview' ? (
+      <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+        {tab === 'profile' && (
           <>
-            {/* Controls & Timeframe */}
+            {accounts.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-purple-500/30 bg-[#120e24]/60 p-10 text-center space-y-3">
+                <Bot className="w-10 h-10 text-purple-400 mx-auto" />
+                <h2 className="text-base font-semibold">ยังไม่มีบอทเชื่อมต่อเข้ามา</h2>
+                <p className="text-xs text-zinc-400 max-w-md mx-auto">
+                  ไปที่แท็บ <strong>API Keys</strong> เพื่อคัดลอกโค้ด 6 บรรทัดไปรันใน MuMu แล้วการ์ดโปรไฟล์ตัวละครจะเด้งขึ้นมาอัตโนมัติครับ
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                {/* LEFT COLUMN: Cyber Anime Profile Card */}
+                <section className="lg:col-span-4 rounded-2xl border border-purple-500/35 bg-gradient-to-b from-[#171130]/95 via-[#110c24]/95 to-[#0d091c]/95 p-5 shadow-[0_0_40px_rgba(139,92,246,0.15)] relative overflow-hidden">
+                  {/* Header */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <div className="text-sm font-bold tracking-wider uppercase text-white flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-purple-400" />
+                        {activeAccount.bot_name}
+                      </div>
+                      <div className="text-[11px] text-purple-300/60">
+                        {activeAccount.roblox_username || 'Roblox Player'}
+                      </div>
+                    </div>
+
+                    <span
+                      className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium ${
+                        activeAccount.live_status === 'farming'
+                          ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                          : activeAccount.live_status === 'lobby'
+                          ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                          : 'bg-rose-500/15 border-rose-500/40 text-rose-300'
+                      }`}
+                    >
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          activeAccount.live_status === 'farming'
+                            ? 'bg-emerald-400 animate-pulse'
+                            : activeAccount.live_status === 'lobby'
+                            ? 'bg-amber-400'
+                            : 'bg-rose-500'
+                        }`}
+                      />
+                      {activeAccount.live_status === 'farming'
+                        ? 'ออนไลน์'
+                        : activeAccount.live_status === 'lobby'
+                        ? 'Lobby'
+                        : 'ไม่เชื่อมต่อ'}
+                    </span>
+                  </div>
+
+                  {/* Avatar on Glowing Pedestal */}
+                  <div className="relative flex flex-col items-center justify-center py-4 my-1">
+                    {/* Starburst Aura */}
+                    <div className="absolute w-48 h-48 rounded-full bg-purple-600/20 blur-2xl pointer-events-none" />
+                    <div className="relative z-10 h-44 flex items-center justify-center">
+                      {activeAccount.roblox_user_id && avatarCache[activeAccount.roblox_user_id] ? (
+                        <img
+                          src={avatarCache[activeAccount.roblox_user_id]}
+                          alt={activeAccount.roblox_username || activeAccount.bot_name}
+                          className="h-44 w-44 object-contain drop-shadow-[0_0_20px_rgba(168,85,247,0.45)]"
+                        />
+                      ) : (
+                        <div className="w-28 h-28 rounded-full border border-purple-500/40 bg-purple-950/50 flex items-center justify-center text-purple-300">
+                          <Bot className="w-12 h-12" />
+                        </div>
+                      )}
+                    </div>
+                    {/* Glowing Pedestal Ring */}
+                    <div className="w-44 h-5 -mt-3 rounded-[100%] border-2 border-purple-400/60 bg-purple-500/20 shadow-[0_0_25px_rgba(168,85,247,0.6)]" />
+                  </div>
+
+                  {/* Bot Switcher + Level Badge */}
+                  <div className="flex items-center justify-center gap-3 my-3">
+                    <button
+                      onClick={() =>
+                        setSelectedIdx((i) => (i - 1 + accounts.length) % accounts.length)
+                      }
+                      disabled={accounts.length <= 1}
+                      className="p-1.5 rounded-lg border border-purple-500/30 bg-[#1a1336] text-purple-300 hover:text-white disabled:opacity-30 cursor-pointer"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+
+                    <div className="px-5 py-1 rounded-xl border border-purple-400/50 bg-[#1e163d] text-sm font-bold tracking-wider shadow-[0_0_15px_rgba(168,85,247,0.25)]">
+                      {level > 0 ? `LV. ${level}` : activeAccount.bot_name}
+                    </div>
+
+                    <button
+                      onClick={() => setSelectedIdx((i) => (i + 1) % accounts.length)}
+                      disabled={accounts.length <= 1}
+                      className="p-1.5 rounded-lg border border-purple-500/30 bg-[#1a1336] text-purple-300 hover:text-white disabled:opacity-30 cursor-pointer"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* XP Progress Bar */}
+                  <div className="space-y-1.5 mb-5">
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-zinc-400">XP Progress</span>
+                      <span className="text-purple-300 font-semibold">
+                        {level > 0 ? `${xpPct}%` : activeAccount.current_wave || 'Ready'}
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full bg-[#090714] border border-purple-500/25 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-purple-500 via-fuchsia-500 to-indigo-400 transition-all duration-500"
+                        style={{ width: `${level > 0 ? xpPct : 100}%` }}
+                      />
+                    </div>
+                    <div className="text-[11px] text-zinc-400 flex justify-between">
+                      <span>
+                        {activeAccount.current_mode || 'Lobby'}{' '}
+                        {activeAccount.current_map ? `• ${activeAccount.current_map}` : ''}
+                      </span>
+                      {xp > 0 && <span>{xp.toLocaleString()} XP</span>}
+                    </div>
+                  </div>
+
+                  {/* 2x2 Currency & Stats Grid */}
+                  <div className="grid grid-cols-2 gap-2.5 mb-4">
+                    <div className="rounded-xl border border-purple-500/25 bg-[#0e0a1e]/90 p-3 flex items-center gap-2.5">
+                      <img src="/icons/gems.png" alt="Gems" className="w-8 h-8 object-contain shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[10px] text-zinc-400">เพชร (Gems)</div>
+                        <div className="text-sm font-bold text-white truncate">
+                          {formatCompact(Number(activeCurrencies['Gems'] || 0))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-purple-500/25 bg-[#0e0a1e]/90 p-3 flex items-center gap-2.5">
+                      <img
+                        src="/icons/pearls.png"
+                        alt="Summer Pearls"
+                        className="w-8 h-8 object-contain shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <div className="text-[10px] text-zinc-400">SummerPearls</div>
+                        <div className="text-sm font-bold text-pink-200 truncate">
+                          {formatCompact(Number(activeCurrencies['Summer Pearls'] || 0))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-purple-500/25 bg-[#0e0a1e]/90 p-3 flex items-center gap-2.5">
+                      <img src="/icons/gold.png" alt="Gold" className="w-8 h-8 object-contain shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[10px] text-zinc-400">ทอง (Gold)</div>
+                        <div className="text-sm font-bold text-amber-200 truncate">
+                          {Number(activeCurrencies['Gold'] || 0).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-purple-500/25 bg-[#0e0a1e]/90 p-3 flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-300 shrink-0">
+                        <Clock className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-[10px] text-zinc-400">เวลาแมตช์รวม</div>
+                        <div className="text-sm font-bold text-white truncate">
+                          {formatDuration(analytics.totalSec)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card Footer */}
+                  <div className="pt-3 border-t border-purple-500/20 flex items-center justify-between text-[11px] text-zinc-400">
+                    <span>อัปเดต: {timeAgo(activeAccount.last_heartbeat)}</span>
+                    <span className="text-purple-300">
+                      บอท {selectedIdx + 1} / {accounts.length}
+                    </span>
+                  </div>
+                </section>
+
+                {/* RIGHT COLUMN: Inventory / Portals Grid + Recent Runs */}
+                <section className="lg:col-span-8 space-y-5">
+                  {/* Top Rarity Tabs & Filter */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-purple-500/25 bg-[#120e24]/85 p-3">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {(['ALL', 'Secret', 'Mythic', 'Legendary'] as const).map((r) => (
+                        <button
+                          key={r}
+                          onClick={() => setRarityFilter(r)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
+                            rarityFilter === r
+                              ? r === 'Secret'
+                                ? 'bg-rose-500/20 border-rose-500/60 text-rose-200'
+                                : r === 'Legendary'
+                                ? 'bg-amber-500/20 border-amber-500/60 text-amber-200'
+                                : 'bg-purple-600/30 border-purple-400/60 text-white'
+                              : 'bg-[#0b0818] border-purple-500/15 text-zinc-400 hover:text-white'
+                          }`}
+                        >
+                          {r === 'ALL' ? 'ทั้งหมด' : r}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-purple-300/60 absolute left-3 top-2.5" />
+                      <input
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        placeholder="ค้นหาพอร์ทัล / ไอเทม..."
+                        className="pl-8 pr-3 py-1.5 text-xs rounded-xl bg-[#090714] border border-purple-500/25 focus:outline-none focus:border-purple-400 text-zinc-100"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Inventory Grid */}
+                  {activeItems.length > 0 ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
+                      {activeItems.map((item, idx) => {
+                        const style = getRarityStyle(item.rarity, item.name);
+                        const icon = getItemIcon(item.name);
+                        return (
+                          <div
+                            key={`${item.name}-${idx}`}
+                            className={`rounded-2xl border p-4 flex flex-col justify-between min-h-[148px] transition hover:scale-[1.01] ${style.card}`}
+                          >
+                            <div className="flex justify-end">
+                              <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-black/40 border border-white/10 text-zinc-100">
+                                x{item.amount}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-center py-2">
+                              {icon ? (
+                                <img
+                                  src={icon}
+                                  alt={item.name}
+                                  className="w-16 h-16 object-contain drop-shadow-[0_0_12px_rgba(168,85,247,0.4)]"
+                                />
+                              ) : (
+                                <Sparkles className={`w-10 h-10 ${style.text}`} />
+                              )}
+                            </div>
+
+                            <div>
+                              <div className="text-xs font-bold text-white truncate">
+                                {item.name}
+                              </div>
+                              <div className={`text-[11px] font-medium ${style.text}`}>
+                                {style.label}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-purple-500/25 bg-[#120e24]/60 p-6 text-center space-y-2">
+                      <p className="text-xs text-zinc-300">
+                        ยังไม่มีรายการ Portal / Stat Cube จากบอทนี้ (จะซิงค์อัตโนมัติในรอบ Heartbeat ถัดไปหลังจากอัปเดตสคริปต์)
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Quick Recent Runs Preview */}
+                  <div className="rounded-2xl border border-purple-500/25 bg-[#120e24]/80 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-purple-500/20 flex items-center justify-between">
+                      <h2 className="text-xs font-bold uppercase tracking-wider text-purple-200 flex items-center gap-2">
+                        <Activity className="w-4 h-4 text-purple-400" />
+                        รอบล่าสุด ({logs.slice(0, 5).length})
+                      </h2>
+                      <button
+                        onClick={() => setTab('history')}
+                        className="text-xs text-purple-300 hover:text-white cursor-pointer"
+                      >
+                        ดูทั้งหมด →
+                      </button>
+                    </div>
+                    <div className="divide-y divide-purple-500/10">
+                      {logs.slice(0, 5).map((log) => (
+                        <div
+                          key={log.id}
+                          className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                log.result === 'Win'
+                                  ? 'bg-emerald-500/15 text-emerald-300'
+                                  : 'bg-rose-500/15 text-rose-300'
+                              }`}
+                            >
+                              {log.result}
+                            </span>
+                            <span className="font-medium text-white">{log.bot_name}</span>
+                            <span className="text-zinc-400">
+                              {log.mode} • {log.map_name}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {(log.rewards || []).map((r, i) => {
+                              const icon = getItemIcon(r.name);
+                              const st = getRarityStyle(r.rarity, r.name);
+                              return (
+                                <span
+                                  key={i}
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] ${st.badge}`}
+                                >
+                                  {icon && <img src={icon} alt={r.name} className="w-3.5 h-3.5" />}
+                                  +{r.amount.toLocaleString()}
+                                </span>
+                              );
+                            })}
+                            <span className="text-zinc-500 ml-1">{timeAgo(log.created_at)}</span>
+                          </div>
+                        </div>
+                      ))}
+                      {logs.length === 0 && (
+                        <div className="p-6 text-center text-xs text-zinc-500">
+                          ยังไม่มีประวัติการจบรอบ
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </section>
+              </div>
+            )}
+          </>
+        )}
+
+        {tab === 'history' && (
+          <div className="space-y-5">
+            {/* Timeframe + Clear */}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 {[1, 24, 168].map((h) => (
                   <button
                     key={h}
                     onClick={() => setHours(h)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition cursor-pointer ${
                       hours === h
-                        ? 'bg-zinc-800 border-zinc-600 text-white'
-                        : 'bg-zinc-900/60 border-zinc-800 text-zinc-400 hover:text-white'
+                        ? 'bg-purple-600/30 border-purple-400/60 text-white'
+                        : 'bg-[#120e24] border-purple-500/20 text-zinc-400 hover:text-white'
                     }`}
                   >
-                    {h === 1 ? 'Last 1h' : h === 24 ? 'Last 24h' : 'Last 7d'}
+                    {h === 1 ? '1 ชม. ล่าสุด' : h === 24 ? '24 ชม. ล่าสุด' : '7 วันล่าสุด'}
                   </button>
                 ))}
               </div>
               <button
-                onClick={fetchDashboard}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 transition cursor-pointer"
+                onClick={handleClearLogs}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-rose-500/10 border border-rose-500/30 text-rose-300 hover:bg-rose-500/20 transition cursor-pointer"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-                Refresh
+                <Trash2 className="w-3.5 h-3.5" />
+                ล้างประวัติ
               </button>
             </div>
 
             {/* KPI Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-              <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+              <div className="rounded-2xl border border-purple-500/25 bg-[#120e24]/85 p-4">
                 <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
-                  <span>Active Bots</span>
+                  <span>บอทออนไลน์</span>
                   <Bot className="w-4 h-4 text-emerald-400" />
                 </div>
                 <div className="text-2xl font-bold">
@@ -336,9 +769,9 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+              <div className="rounded-2xl border border-purple-500/25 bg-[#120e24]/85 p-4">
                 <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
-                  <span>Runs &amp; Winrate</span>
+                  <span>จำนวนรอบ &amp; Winrate</span>
                   <Trophy className="w-4 h-4 text-amber-400" />
                 </div>
                 <div className="text-2xl font-bold">
@@ -349,137 +782,42 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+              <div className="rounded-2xl border border-purple-500/25 bg-[#120e24]/85 p-4">
                 <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
-                  <span>Avg Clear Time</span>
+                  <span>เวลาเฉลี่ยต่อรอบ</span>
                   <Clock className="w-4 h-4 text-sky-400" />
                 </div>
                 <div className="text-2xl font-bold">{formatDuration(analytics.avgSec)}</div>
               </div>
 
-              <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+              <div className="rounded-2xl border border-purple-500/25 bg-[#120e24]/85 p-4">
                 <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
-                  <span>Gems / Hour</span>
-                  <TrendingUp className="w-4 h-4 text-indigo-400" />
+                  <span>Gems / ชั่วโมง</span>
+                  <TrendingUp className="w-4 h-4 text-purple-400" />
                 </div>
                 <div className="text-2xl font-bold">{analytics.gemsPerHr.toLocaleString()}</div>
               </div>
             </div>
 
-            {/* Bot Monitor Grid */}
-            <section>
-              <h2 className="text-sm font-semibold text-zinc-300 mb-3 flex items-center gap-2">
-                <Activity className="w-4 h-4 text-indigo-400" />
-                Bot Status &amp; Inventory
-              </h2>
-              {accounts.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-zinc-800 p-8 text-center text-sm text-zinc-400">
-                  No bots connected yet. Go to <strong>API Keys</strong> tab to generate a key and
-                  run the Lua tracker in MuMu.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {accounts.map((acc) => {
-                    const snap = snapshotMap.get(acc.id);
-                    const dotColor =
-                      acc.live_status === 'farming'
-                        ? 'bg-emerald-400'
-                        : acc.live_status === 'lobby'
-                        ? 'bg-amber-400'
-                        : 'bg-rose-500';
-                    return (
-                      <div
-                        key={acc.id}
-                        className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 space-y-3"
-                      >
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className={`w-2.5 h-2.5 rounded-full ${dotColor}`} />
-                              <h3 className="font-semibold text-sm">{acc.bot_name}</h3>
-                            </div>
-                            <p className="text-xs text-zinc-400 mt-0.5">
-                              {acc.roblox_username || 'Roblox Account'}
-                            </p>
-                          </div>
-                          <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 capitalize">
-                            {acc.live_status}
-                          </span>
-                        </div>
-
-                        <div className="text-xs text-zinc-300 bg-zinc-950/60 rounded-lg p-2.5 border border-zinc-800/80 space-y-1">
-                          <div className="flex justify-between">
-                            <span className="text-zinc-500">Mode / Map:</span>
-                            <span className="font-medium">
-                              {acc.current_mode || '-'} {acc.current_map ? `• ${acc.current_map}` : ''}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-zinc-500">Wave / Floor:</span>
-                            <span>{acc.current_wave || '-'}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-zinc-500">Heartbeat:</span>
-                            <span>{timeAgo(acc.last_heartbeat)}</span>
-                          </div>
-                        </div>
-
-                        {snap && Object.keys(snap.currencies || {}).length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 pt-1">
-                            {Object.entries(snap.currencies).map(([k, v]) => {
-                              const icon = getItemIcon(k);
-                              return (
-                                <span
-                                  key={k}
-                                  className="inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-md bg-indigo-500/10 border border-indigo-500/20 text-indigo-200"
-                                >
-                                  {icon && (
-                                    <img
-                                      src={icon}
-                                      alt={k}
-                                      className="w-3.5 h-3.5 object-contain shrink-0"
-                                    />
-                                  )}
-                                  <span>
-                                    {k}: <strong>{Number(v).toLocaleString()}</strong>
-                                  </span>
-                                </span>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-
             {/* Total Loot Summary */}
             {Object.keys(analytics.lootTotals).length > 0 && (
-              <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
-                <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-3">
-                  Total Loot ({hours === 1 ? '1h' : hours === 24 ? '24h' : '7d'})
+              <section className="rounded-2xl border border-purple-500/25 bg-[#120e24]/85 p-4">
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-purple-300 mb-3">
+                  ยอดรวมที่ได้ในช่วงเวลานี้
                 </h2>
                 <div className="flex flex-wrap gap-2">
                   {Object.entries(analytics.lootTotals)
                     .sort((a, b) => b[1] - a[1])
                     .map(([name, amount]) => {
                       const icon = getItemIcon(name);
+                      const st = getRarityStyle(undefined, name);
                       return (
                         <span
                           key={name}
-                          className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border font-medium ${rarityBadgeClass(
-                            undefined,
-                            name
-                          )}`}
+                          className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border font-medium ${st.badge}`}
                         >
                           {icon && (
-                            <img
-                              src={icon}
-                              alt={name}
-                              className="w-4 h-4 object-contain shrink-0"
-                            />
+                            <img src={icon} alt={name} className="w-4 h-4 object-contain shrink-0" />
                           )}
                           <span>
                             {name}: <strong className="ml-1">+{amount.toLocaleString()}</strong>
@@ -492,25 +830,25 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
             )}
 
             {/* Run History Table */}
-            <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 overflow-hidden">
-              <div className="p-4 border-b border-zinc-800 flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-sm font-semibold">Run &amp; Drop History</h2>
+            <section className="rounded-2xl border border-purple-500/25 bg-[#120e24]/85 overflow-hidden">
+              <div className="p-4 border-b border-purple-500/20 flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-sm font-semibold">ตารางประวัติดรอปทุกรอบ</h2>
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="relative">
                     <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-2.5" />
                     <input
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Filter map or item..."
-                      className="pl-8 pr-3 py-1.5 text-xs rounded-lg bg-zinc-950 border border-zinc-800 focus:outline-none focus:border-indigo-500"
+                      placeholder="ค้นหาด่าน / ไอเทม..."
+                      className="pl-8 pr-3 py-1.5 text-xs rounded-xl bg-[#090714] border border-purple-500/25 focus:outline-none focus:border-purple-400"
                     />
                   </div>
                   <select
                     value={botFilter}
                     onChange={(e) => setBotFilter(e.target.value)}
-                    className="px-2.5 py-1.5 text-xs rounded-lg bg-zinc-950 border border-zinc-800"
+                    className="px-2.5 py-1.5 text-xs rounded-xl bg-[#090714] border border-purple-500/25"
                   >
-                    <option value="ALL">All Bots</option>
+                    <option value="ALL">ทุกบอท</option>
                     {accounts.map((a) => (
                       <option key={a.id} value={a.bot_name}>
                         {a.bot_name}
@@ -520,9 +858,9 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                   <select
                     value={resultFilter}
                     onChange={(e) => setResultFilter(e.target.value)}
-                    className="px-2.5 py-1.5 text-xs rounded-lg bg-zinc-950 border border-zinc-800"
+                    className="px-2.5 py-1.5 text-xs rounded-xl bg-[#090714] border border-purple-500/25"
                   >
-                    <option value="ALL">All Results</option>
+                    <option value="ALL">Win &amp; Lose</option>
                     <option value="Win">Win</option>
                     <option value="Lose">Lose</option>
                   </select>
@@ -531,26 +869,26 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
 
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-zinc-950/60 text-zinc-400 border-b border-zinc-800">
+                  <thead className="bg-[#0b0818] text-purple-300/70 border-b border-purple-500/20">
                     <tr>
-                      <th className="px-4 py-3 font-medium">Time</th>
-                      <th className="px-4 py-3 font-medium">Bot</th>
-                      <th className="px-4 py-3 font-medium">Mode / Map</th>
-                      <th className="px-4 py-3 font-medium">Result</th>
-                      <th className="px-4 py-3 font-medium">Duration</th>
-                      <th className="px-4 py-3 font-medium">Rewards</th>
+                      <th className="px-4 py-3 font-medium">เวลา</th>
+                      <th className="px-4 py-3 font-medium">บอท</th>
+                      <th className="px-4 py-3 font-medium">โหมด / ด่าน</th>
+                      <th className="px-4 py-3 font-medium">ผลลัพธ์</th>
+                      <th className="px-4 py-3 font-medium">เวลาที่ใช้</th>
+                      <th className="px-4 py-3 font-medium">ของที่ได้</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-800/60">
+                  <tbody className="divide-y divide-purple-500/10">
                     {filteredLogs.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
-                          No runs recorded for this filter.
+                          ไม่พบประวัติการฟาร์ม
                         </td>
                       </tr>
                     ) : (
                       filteredLogs.map((log) => (
-                        <tr key={log.id} className="hover:bg-zinc-800/30">
+                        <tr key={log.id} className="hover:bg-purple-500/5">
                           <td className="px-4 py-3 text-zinc-400 whitespace-nowrap">
                             {timeAgo(log.created_at)}
                           </td>
@@ -576,13 +914,11 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                             <div className="flex flex-wrap gap-1.5">
                               {(log.rewards || []).map((r, idx) => {
                                 const icon = getItemIcon(r.name);
+                                const st = getRarityStyle(r.rarity, r.name);
                                 return (
                                   <span
                                     key={idx}
-                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[11px] ${rarityBadgeClass(
-                                      r.rarity,
-                                      r.name
-                                    )}`}
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] ${st.badge}`}
                                   >
                                     {icon && (
                                       <img
@@ -592,7 +928,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                                       />
                                     )}
                                     <span>
-                                      {r.name} x{r.amount}
+                                      {r.name} x{r.amount.toLocaleString()}
                                     </span>
                                   </span>
                                 );
@@ -606,76 +942,76 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                 </table>
               </div>
             </section>
-          </>
-        ) : (
-          /* API Keys & Setup Tab */
+          </div>
+        )}
+
+        {tab === 'keys' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <section className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5 space-y-5">
+            <section className="rounded-2xl border border-purple-500/25 bg-[#120e24]/85 p-5 space-y-5">
               <div>
                 <h2 className="text-base font-semibold">Generate New API Key</h2>
                 <p className="text-xs text-zinc-400 mt-1">
-                  Paste your key into <code>aa_tracker.lua</code> to stream runs directly to your
-                  Discord account dashboard.
+                  นำ Key ไปใส่ในโค้ด Lua เพื่อส่งข้อมูลเข้าหน้าโปรไฟล์ของพี่โดยตรง
                 </p>
               </div>
 
               <form onSubmit={handleCreateKey} className="space-y-3">
                 <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Key Label</label>
+                  <label className="block text-xs text-zinc-400 mb-1">ชื่อ Key</label>
                   <input
                     value={newLabel}
                     onChange={(e) => setNewLabel(e.target.value)}
-                    placeholder="e.g. MuMu Instance 1"
-                    className="w-full px-3 py-2 text-sm rounded-lg bg-zinc-950 border border-zinc-800 focus:outline-none focus:border-indigo-500"
+                    placeholder="e.g. MuMu Farm"
+                    className="w-full px-3 py-2 text-sm rounded-xl bg-[#090714] border border-purple-500/25 focus:outline-none focus:border-purple-400"
                     required
                   />
                 </div>
                 <div>
                   <label className="block text-xs text-zinc-400 mb-1">
-                    Discord Webhook URL (Optional — for Rare Drop Alerts)
+                    Discord Webhook URL (ไม่ใส่ก็ได้ — เอาไว้แจ้งเตือน Rare Drop)
                   </label>
                   <input
                     value={newWebhook}
                     onChange={(e) => setNewWebhook(e.target.value)}
                     placeholder="https://discord.com/api/webhooks/..."
-                    className="w-full px-3 py-2 text-sm rounded-lg bg-zinc-950 border border-zinc-800 focus:outline-none focus:border-indigo-500"
+                    className="w-full px-3 py-2 text-sm rounded-xl bg-[#090714] border border-purple-500/25 focus:outline-none focus:border-purple-400"
                   />
                 </div>
                 <button
                   type="submit"
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white transition cursor-pointer"
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-sm font-medium text-white transition cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
                   Create API Key
                 </button>
                 {keyError && (
-                  <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
+                  <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
                     {keyError}
                   </div>
                 )}
               </form>
 
               <div className="space-y-2.5 pt-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                  Your Keys ({keys.length})
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-purple-300/70">
+                  Keys ของคุณ ({keys.length})
                 </h3>
                 {keys.map((k) => (
                   <div
                     key={k.id}
-                    className="rounded-lg border border-zinc-800 bg-zinc-950/70 p-3 flex items-center justify-between gap-3"
+                    className="rounded-xl border border-purple-500/20 bg-[#090714]/80 p-3 flex items-center justify-between gap-3"
                   >
                     <div className="min-w-0">
                       <div className="text-xs font-semibold">{k.label}</div>
-                      <div className="text-xs font-mono text-indigo-300 truncate">{k.api_key}</div>
+                      <div className="text-xs font-mono text-purple-300 truncate">{k.api_key}</div>
                       <div className="text-[11px] text-zinc-500 mt-0.5">
-                        Last used: {k.last_used_at ? timeAgo(k.last_used_at) : 'Never'}
+                        ใช้งานล่าสุด: {k.last_used_at ? timeAgo(k.last_used_at) : 'ยังไม่เคยใช้'}
                         {k.discord_webhook_url ? ' • Discord Alert ON' : ''}
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         onClick={() => copyText(k.id, k.api_key)}
-                        className="p-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 cursor-pointer"
+                        className="p-2 rounded-lg bg-[#15102b] hover:bg-purple-500/20 text-zinc-300 cursor-pointer"
                         title="Copy API Key"
                       >
                         {copiedId === k.id ? (
@@ -686,7 +1022,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                       </button>
                       <button
                         onClick={() => handleDeleteKey(k.id)}
-                        className="p-2 rounded-lg bg-zinc-900 hover:bg-rose-500/20 text-zinc-400 hover:text-rose-400 cursor-pointer"
+                        className="p-2 rounded-lg bg-[#15102b] hover:bg-rose-500/20 text-zinc-400 hover:text-rose-400 cursor-pointer"
                         title="Delete Key"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -697,17 +1033,18 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
               </div>
             </section>
 
-            <section className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5 space-y-4">
-              <h2 className="text-base font-semibold">Lua Client Configuration</h2>
+            <section className="rounded-2xl border border-purple-500/25 bg-[#120e24]/85 p-5 space-y-4">
+              <h2 className="text-base font-semibold">โค้ดสำหรับรันใน MuMu (6 บรรทัด)</h2>
               <p className="text-xs text-zinc-400">
-                Put these settings at the top of <code>aa_tracker.lua</code> in your executor:
+                ก๊อปโค้ดนี้ไปรันใน Executor หรือวางในโฟลเดอร์ <code>autoexec</code> ได้เลย:
               </p>
-              <pre className="rounded-xl bg-zinc-950 border border-zinc-800 p-4 text-xs font-mono text-emerald-300 overflow-x-auto">
+              <pre className="rounded-xl bg-[#090714] border border-purple-500/25 p-4 text-xs font-mono text-emerald-300 overflow-x-auto">
 {`getgenv().AA_TRACKER_CONFIG = {
     API_URL  = "${originUrl}/api/ingest",
     API_KEY  = "${keys[0]?.api_key || 'PASTE_YOUR_API_KEY_HERE'}",
-    BOT_NAME = "Bot 1" -- เปลี่ยนเป็น Bot 2 สำหรับจอที่ 2
-}`}
+    BOT_NAME = "Bot 1" -- จอ 2 เปลี่ยนเป็น "Bot 2"
+}
+loadstring(game:HttpGet("https://raw.githubusercontent.com/einmee43/AAD/main/aa_tracker.lua"))()`}
               </pre>
             </section>
           </div>

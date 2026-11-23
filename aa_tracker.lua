@@ -45,7 +45,7 @@ local function postIngest(payload)
     end)
 end
 
--- Scan ONLY useful player currencies: Gems, Gold, Summer Pearls
+-- Scan ONLY useful player currencies: Gems, Gold, Summer Pearls (+ Level/XP metadata)
 -- Returns (currenciesTable, isReadyBool)
 local function readCurrencies()
     local currencies = {
@@ -60,6 +60,8 @@ local function readCurrencies()
             local gemObj = stats:FindFirstChild("gem_amount")
             local goldObj = stats:FindFirstChild("gold_amount")
             local pearlObj = stats:FindFirstChild("_resourceSummerPearls")
+            local lvlObj = stats:FindFirstChild("player_level") or stats:FindFirstChild("level") or stats:FindFirstChild("Level")
+            local xpObj = stats:FindFirstChild("player_xp") or stats:FindFirstChild("xp") or stats:FindFirstChild("XP")
             if gemObj and gemObj:IsA("ValueBase") then
                 currencies["Gems"] = tonumber(gemObj.Value) or 0
                 ready = true
@@ -72,9 +74,55 @@ local function readCurrencies()
                 currencies["Summer Pearls"] = tonumber(pearlObj.Value) or 0
                 ready = true
             end
+            if lvlObj and lvlObj:IsA("ValueBase") then
+                currencies["_level"] = tonumber(lvlObj.Value) or 1
+            end
+            if xpObj and xpObj:IsA("ValueBase") then
+                currencies["_xp"] = tonumber(xpObj.Value) or 0
+            end
         end
     end)
     return currencies, ready
+end
+
+-- Scan useful inventory items (Portals, Stat Cubes, Rerolls, Star Remnants)
+local function readUsefulItems()
+    local counts = {}
+    local function addItem(rawName, amt)
+        if not rawName or type(rawName) ~= "string" then return end
+        local low = rawName:lower()
+        local rarity = "Mythic"
+        if low:find("secret") or low:find("explosion") or low:find("demon") then
+            rarity = "Secret"
+        elseif low:find("reroll") or low:find("legendary") then
+            rarity = "Legendary"
+        end
+        if low:find("portal") or low:find("cube") or low:find("remnant") or low:find("reroll") then
+            local key = rawName
+            if not counts[key] then
+                counts[key] = { name = rawName, amount = 0, rarity = rarity }
+            end
+            counts[key].amount = counts[key].amount + (tonumber(amt) or 1)
+        end
+    end
+
+    pcall(function()
+        for _, child in ipairs(LocalPlayer:GetChildren()) do
+            local cname = child.Name:lower()
+            if cname:find("item") or cname:find("invent") or cname:find("bag") then
+                for _, sub in ipairs(child:GetChildren()) do
+                    local qty = sub:IsA("ValueBase") and tonumber(sub.Value) or 1
+                    addItem(sub.Name, qty)
+                end
+            end
+        end
+    end)
+
+    local list = {}
+    for _, v in pairs(counts) do
+        table.insert(list, v)
+    end
+    return list
 end
 
 -- Detect current game state (Lobby vs Farming + Wave/Map)
@@ -120,7 +168,8 @@ task.spawn(function()
                 current_mode = mode,
                 current_map = mapName,
                 current_wave = waveStr,
-                currencies = cur
+                currencies = cur,
+                items = readUsefulItems()
             })
         end
         task.wait(45)
@@ -146,14 +195,16 @@ task.spawn(function()
                 local rewards = {}
                 if statsReady and endReady then
                     for k, endVal in pairs(endCurrencies) do
-                        local diff = endVal - (startCurrencies[k] or endVal)
-                        if diff > 0 then
-                            table.insert(rewards, {
-                                name = k,
-                                amount = diff,
-                                category = "currency",
-                                rarity = "common"
-                            })
+                        if string.sub(k, 1, 1) ~= "_" then
+                            local diff = endVal - (startCurrencies[k] or endVal)
+                            if diff > 0 then
+                                table.insert(rewards, {
+                                    name = k,
+                                    amount = diff,
+                                    category = "currency",
+                                    rarity = "common"
+                                })
+                            end
                         end
                     end
                 end
