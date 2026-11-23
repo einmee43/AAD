@@ -45,23 +45,27 @@ local function postIngest(payload)
     end)
 end
 
--- Scan player currencies (Attributes / Folders / _stats)
+-- Scan ONLY useful player currencies: Gems, Gold, Summer Pearls
 local function readCurrencies()
-    local currencies = {}
+    local currencies = {
+        ["Gems"] = 0,
+        ["Gold"] = 0,
+        ["Summer Pearls"] = 0,
+    }
     pcall(function()
-        local targetKeys = { "Gems", "Gold", "Coins", "TraitRerolls", "Rerolls", "StarRemnants", "Candy", "Tickets", "DungeonCoins" }
-        for _, key in ipairs(targetKeys) do
-            local attr = LocalPlayer:GetAttribute(key)
-            if type(attr) == "number" then
-                currencies[key] = attr
+        local stats = LocalPlayer:FindFirstChild("_stats")
+        if stats then
+            local gemObj = stats:FindFirstChild("gem_amount")
+            local goldObj = stats:FindFirstChild("gold_amount")
+            local pearlObj = stats:FindFirstChild("_resourceSummerPearls")
+            if gemObj and gemObj:IsA("ValueBase") then
+                currencies["Gems"] = tonumber(gemObj.Value) or 0
             end
-        end
-        local statsFolder = LocalPlayer:FindFirstChild("_stats") or LocalPlayer:FindFirstChild("leaderstats") or LocalPlayer:FindFirstChild("Data")
-        if statsFolder then
-            for _, v in ipairs(statsFolder:GetChildren()) do
-                if v:IsA("IntValue") or v:IsA("NumberValue") then
-                    currencies[v.Name] = v.Value
-                end
+            if goldObj and goldObj:IsA("ValueBase") then
+                currencies["Gold"] = tonumber(goldObj.Value) or 0
+            end
+            if pearlObj and pearlObj:IsA("ValueBase") then
+                currencies["Summer Pearls"] = tonumber(pearlObj.Value) or 0
             end
         end
     end)
