@@ -72,26 +72,43 @@ local function readCurrencies()
                 currencies["Summer Pearls"] = tonumber(pearlObj.Value) or 0
                 ready = true
             end
+            for _, child in ipairs(stats:GetChildren()) do
+                if child:IsA("ValueBase") then
+                    local lname = child.Name:lower()
+                    if lname:find("dawn") or lname:find("april") then
+                        currencies["Dawn Coins"] = tonumber(child.Value) or 0
+                        ready = true
+                        break
+                    end
+                end
+            end
         end
 
         local pg = LocalPlayer:FindFirstChild("PlayerGui")
         if pg then
-            -- Dawn Coins from SummonGUI.Main.TopBar.Currency.ResourceFrame.Level (only present/populated in Lobby)
-            pcall(function()
-                local sg = pg:FindFirstChild("SummonGUI")
-                local main = sg and sg:FindFirstChild("Main")
-                local top = main and main:FindFirstChild("TopBar")
-                local cur = top and top:FindFirstChild("Currency")
-                local rf = cur and cur:FindFirstChild("ResourceFrame")
-                local lbl = rf and rf:FindFirstChild("Level")
-                if lbl and lbl:IsA("TextLabel") then
-                    local cleaned = lbl.Text:gsub(",", "")
-                    local num = tonumber(cleaned)
-                    if num and (num > 0 or game.PlaceId == 8304191830) then
-                        currencies["Dawn Coins"] = num
+            -- Dawn Coins: only read SummonGUI ResourceFrame if its icon is Dawn/April Coins (not SummerPearls/Gems)
+            if currencies["Dawn Coins"] == nil then
+                pcall(function()
+                    local sg = pg:FindFirstChild("SummonGUI")
+                    local main = sg and sg:FindFirstChild("Main")
+                    local top = main and main:FindFirstChild("TopBar")
+                    local cur = top and top:FindFirstChild("Currency")
+                    local rf = cur and cur:FindFirstChild("ResourceFrame")
+                    local lbl = rf and rf:FindFirstChild("Level")
+                    local img = rf and (rf:FindFirstChildOfClass("ImageLabel") or rf:FindFirstChild("Icon"))
+                    local imgStr = (img and img:IsA("ImageLabel") and img.Image) or ""
+                    local isDawnIcon = imgStr:find("116671867490432") ~= nil
+                    if lbl and lbl:IsA("TextLabel") and isDawnIcon then
+                        local cleaned = lbl.Text:gsub(",", "")
+                        local num = tonumber(cleaned)
+                        if num then
+                            currencies["Dawn Coins"] = num
+                        end
+                    elseif game.PlaceId == 8304191830 then
+                        currencies["Dawn Coins"] = 0
                     end
-                end
-            end)
+                end)
+            end
 
             -- Level & XP from exact paths: ProfileGUI.Main.ProfileBanner.XP.Desc.Level or spawn_units.Lives.Main.Desc.Level
             pcall(function()
