@@ -7,6 +7,32 @@ type WikiPage = {
 };
 
 export async function GET(req: NextRequest) {
+  const imgParam = req.nextUrl.searchParams.get('img');
+  if (imgParam) {
+    if (!imgParam.startsWith('https://static.wikia.nocookie.net/animeadventures/')) {
+      return NextResponse.json({ error: 'Invalid image host' }, { status: 400 });
+    }
+    try {
+      const upstream = await fetch(imgParam, {
+        headers: { Referer: 'https://animeadventures.fandom.com/' },
+        next: { revalidate: 86400 },
+      });
+      if (!upstream.ok) {
+        return new NextResponse('Image fetch failed', { status: upstream.status });
+      }
+      const contentType = upstream.headers.get('content-type') || 'image/png';
+      const buf = await upstream.arrayBuffer();
+      return new NextResponse(buf, {
+        headers: {
+          'Content-Type': contentType,
+          'Cache-Control': 'public, max-age=86400, s-maxage=86400',
+        },
+      });
+    } catch {
+      return NextResponse.json({ error: 'Proxy failed' }, { status: 502 });
+    }
+  }
+
   const rawNames = req.nextUrl.searchParams.get('names') || '';
   const names = rawNames
     .split('|')
@@ -105,10 +131,9 @@ export async function GET(req: NextRequest) {
         if (!next) break;
         resolved = next;
       }
-      if (icons[resolved]) {
-        result[reqName] = icons[resolved];
-      } else if (icons[reqName]) {
-        result[reqName] = icons[reqName];
+      const rawUrl = icons[resolved] || icons[reqName];
+      if (rawUrl) {
+        result[reqName] = `/api/unit-icons?img=${encodeURIComponent(rawUrl)}`;
       }
     }
 
