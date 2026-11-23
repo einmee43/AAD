@@ -20,7 +20,7 @@ export default function KageBackdrop() {
       <iframe
         src="/bg/phase-space/index.html"
         title="Phase Space Background"
-        className="absolute inset-0 w-full h-full border-0 pointer-events-none"
+        className="absolute inset-0 w-full h-full border-0 pointer-events-none blur-[3px] scale-[1.03]"
         tabIndex={-1}
       />
       <div

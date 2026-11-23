@@ -53,7 +53,7 @@ const THEMES = {
 };
 const THEME_ORDER = ['coral', 'aurora', 'ember', 'glacier', 'orchid'];
 const QUALITY = { high: { nc: 512, nd: 192, sh: 512 }, medium: { nc: 256, nd: 128, sh: 256 }, low: { nc: 128, nd: 64, sh: 128 } };
-const set = { mode: 'discovery', theme: 'ember', dust: 55, glow: 55, hold: 35, quality: 'medium' };
+const set = { mode: 'discovery', theme: 'ember', dust: 50, glow: 55, hold: 35, quality: 'low' };
 
 // ---- GL helpers ----
 function sh(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
@@ -901,7 +901,7 @@ void main(){ vec2 uv = gl_FragCoord.xy / res; vec3 c = texture(hdr, uv).rgb + te
 const ELV = 5;   // the glow averages this bloom level (1/64 res), which already holds the wider ones
 let W = 0, H = 0, T = null;
 function resize() {
-  const dpr = still ? 1 : Math.min(devicePixelRatio || 1, 2);
+  const dpr = still ? 1 : Math.min(devicePixelRatio || 1, 1.25);
   const w = still ? num('w', 1280) : Math.round(innerWidth * dpr), h = still ? num('h', 720) : Math.round(innerHeight * dpr);
   if (w === W && h === H) return; W = cv.width = w; H = cv.height = h;
   if (T) { free(T.hdr, T.base, ...T.echo); T.L.forEach((l) => free(...l)); }
