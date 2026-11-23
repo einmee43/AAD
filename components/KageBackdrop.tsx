@@ -11,8 +11,6 @@ export default function KageBackdrop() {
     const container = containerRef.current;
     if (!container) return;
 
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
     const scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2(0x070506, 0.045);
 
@@ -67,9 +65,9 @@ export default function KageBackdrop() {
 
     const emberMat = new THREE.PointsMaterial({
       color: 0xff4d3d,
-      size: 0.09,
+      size: 0.13,
       transparent: true,
-      opacity: 0.78,
+      opacity: 0.88,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
@@ -101,9 +99,8 @@ export default function KageBackdrop() {
     let targetX = 0;
     let targetY = 0;
     const onPointerMove = (e: PointerEvent) => {
-      if (prefersReducedMotion) return;
-      targetX = ((e.clientX / window.innerWidth) - 0.5) * 1.4;
-      targetY = -((e.clientY / window.innerHeight) - 0.5) * 0.9;
+      targetX = ((e.clientX / window.innerWidth) - 0.5) * 1.8;
+      targetY = -((e.clientY / window.innerHeight) - 0.5) * 1.1;
       if (glowRef.current) {
         glowRef.current.style.transform = `translate3d(${e.clientX - 240}px, ${e.clientY - 240}px, 0)`;
       }
@@ -128,24 +125,22 @@ export default function KageBackdrop() {
         return;
       }
 
-      if (!prefersReducedMotion) {
-        t += 0.012;
-        const posAttr = emberGeo.getAttribute('position') as THREE.BufferAttribute;
-        for (let i = 0; i < count; i++) {
-          let y = posAttr.getY(i) + speeds[i];
-          const x = posAttr.getX(i) + Math.sin(t + phases[i]) * 0.004;
-          if (y > 9) y = -9;
-          posAttr.setXY(i, x, y);
-        }
-        posAttr.needsUpdate = true;
-
-        ash.rotation.y = Math.sin(t * 0.15) * 0.08;
-        halo.scale.setScalar(1 + Math.sin(t * 0.8) * 0.03);
-
-        camera.position.x += (targetX - camera.position.x) * 0.03;
-        camera.position.y += (targetY - camera.position.y) * 0.03;
-        camera.lookAt(0, 0, -4);
+      t += 0.014;
+      const posAttr = emberGeo.getAttribute('position') as THREE.BufferAttribute;
+      for (let i = 0; i < count; i++) {
+        let y = posAttr.getY(i) + speeds[i] * 1.4;
+        const x = posAttr.getX(i) + Math.sin(t + phases[i]) * 0.007;
+        if (y > 9) y = -9;
+        posAttr.setXY(i, x, y);
       }
+      posAttr.needsUpdate = true;
+
+      ash.rotation.y = Math.sin(t * 0.22) * 0.14;
+      halo.scale.setScalar(1 + Math.sin(t * 1.1) * 0.05);
+
+      camera.position.x += (targetX - camera.position.x) * 0.045;
+      camera.position.y += (targetY - camera.position.y) * 0.045;
+      camera.lookAt(0, 0, -4);
 
       renderer.render(scene, camera);
       frameId = requestAnimationFrame(renderFrame);
