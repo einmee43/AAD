@@ -164,6 +164,27 @@ local function readUsefulItems()
         end
     end)
 
+    -- Also scan PlayerGui.items / DungeonInventoryUI slots if populated
+    pcall(function()
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        local itemsGui = pg and pg:FindFirstChild("items")
+        if itemsGui then
+            for _, frame in ipairs(itemsGui:GetDescendants()) do
+                if frame:IsA("Frame") or frame:IsA("ImageButton") then
+                    local nameLbl = frame:FindFirstChild("name") or frame:FindFirstChild("Title")
+                    local qtyLbl = frame:FindFirstChild("Quantity") or frame:FindFirstChild("Amount") or frame:FindFirstChild("RewardQuantity")
+                    if nameLbl and nameLbl:IsA("TextLabel") and #nameLbl.Text > 0 then
+                        local q = 1
+                        if qtyLbl and qtyLbl:IsA("TextLabel") then
+                            q = tonumber((qtyLbl.Text:gsub("[^%d]", ""))) or 1
+                        end
+                        addItem(nameLbl.Text, q)
+                    end
+                end
+            end
+        end
+    end)
+
     local list = {}
     for _, v in pairs(counts) do
         table.insert(list, v)
@@ -171,7 +192,7 @@ local function readUsefulItems()
     return list
 end
 
--- Detect current game state (Lobby vs Farming + Wave/Map)
+-- Detect current game state (Lobby vs Farming + Wave/Map + Dungeon Depth)
 local function detectState()
     local isLobby = (game.PlaceId == 8304191830)
     local status = isLobby and "lobby" or "farming"
@@ -188,6 +209,25 @@ local function detectState()
         if mapAttr then mapName = tostring(mapAttr) end
         local modeAttr = Workspace:GetAttribute("GameMode") or Workspace:GetAttribute("Mode")
         if modeAttr then mode = tostring(modeAttr) end
+
+        -- Read from PlayerGui.Waves.HealthBar.LevelTitle when in-game
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        local waves = pg and pg:FindFirstChild("Waves")
+        local hb = waves and waves:FindFirstChild("HealthBar")
+        local lt = hb and hb:FindFirstChild("LevelTitle")
+        if lt then
+            local mLbl = lt:FindFirstChild("Map")
+            local lLbl = lt:FindFirstChild("Level")
+            if lLbl and lLbl:IsA("TextLabel") and #lLbl.Text > 0 then
+                local lvlTxt = lLbl.Text
+                if lvlTxt:lower():find("dungeon") or lvlTxt:lower():find("depth") then
+                    mode = "Dungeon"
+                end
+                mapName = lvlTxt
+            elseif mLbl and mLbl:IsA("TextLabel") and #mLbl.Text > 0 then
+                mapName = mLbl.Text
+            end
+        end
     end)
 
     return status, mode, mapName, waveStr
@@ -232,18 +272,20 @@ task.spawn(function()
             local resultsUI = pg:FindFirstChild("ResultsUI")
             if resultsUI and resultsUI.Enabled and not sentForCurrentMatch then
                 sentForCurrentMatch = true
-                -- Wait 2s for server to finish crediting _stats after ResultsUI opens
-                task.wait(2)
+                -- Wait 3.5s for server to finish crediting _stats after ResultsUI opens (especially Dungeon Rooms)
+                task.wait(3.5)
                 local duration = math.max(1, os.time() - matchStartTime)
                 local _, mode, mapName, _ = detectState()
                 local endCurrencies, endReady = readCurrencies()
 
                 local rewards = {}
+                local seenRewardNames = {}
                 if statsReady and endReady then
                     for k, endVal in pairs(endCurrencies) do
                         if string.sub(k, 1, 1) ~= "_" then
                             local diff = endVal - (startCurrencies[k] or endVal)
                             if diff > 0 then
+                                seenRewardNames[k:lower()] = true
                                 table.insert(rewards, {
                                     name = k,
                                     amount = diff,
@@ -255,7 +297,7 @@ task.spawn(function()
                     end
                 end
 
-                -- Scan ResultsUI labels for Win/Lose and LevelName
+                -- Scan ResultsUI labels for Win/Lose, LevelName, and Dungeon/Item Drops
                 local resultStatus = "Win"
                 for _, obj in ipairs(resultsUI:GetDescendants()) do
                     if obj:IsA("TextLabel") and obj.Visible and #obj.Text > 0 then
@@ -265,6 +307,32 @@ task.spawn(function()
                             resultStatus = "Lose"
                         elseif obj.Name == "LevelName" or obj.Name == "MapName" then
                             mapName = txt
+                            if low:find("dungeon") or low:find("depth") then
+                                mode = "Dungeon"
+                            end
+                        end
+                    elseif obj:IsA("Frame") or obj:IsA("ImageButton") or obj:IsA("ImageLabel") then
+                        local nLbl = obj:FindFirstChild("name") or obj:FindFirstChild("ItemName") or obj:FindFirstChild("Title")
+                        local qLbl = obj:FindFirstChild("Amount") or obj:FindFirstChild("Quantity") or obj:FindFirstChild("RewardQuantity")
+                        if nLbl and nLbl:IsA("TextLabel") and #nLbl.Text > 0 and nLbl.Visible then
+                            local itemName = nLbl.Text
+                            local lowName = itemName:lower()
+                            if not seenRewardNames[lowName] and not lowName:find("placeholder") and not lowName:find("xp") then
+                                local amt = 1
+                                if qLbl and qLbl:IsA("TextLabel") then
+                                    amt = tonumber((qLbl.Text:gsub("[^%d]", ""))) or 1
+                                end
+                                local rarity = "Mythic"
+                                if lowName:find("secret") or lowName:find("portal") then rarity = "Secret"
+                                elseif lowName:find("reroll") or lowName:find("chest") then rarity = "Legendary" end
+                                seenRewardNames[lowName] = true
+                                table.insert(rewards, {
+                                    name = itemName,
+                                    amount = amt,
+                                    category = "item",
+                                    rarity = rarity
+                                })
+                            end
                         end
                     end
                 end

@@ -315,9 +315,10 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
 
     const totalHours = Math.max(1 / 60, hours);
     const gemsPerHr = Math.round((lootTotals['Gems'] || 0) / totalHours);
+    const pearlsPerHr = Math.round((lootTotals['Summer Pearls'] || 0) / totalHours);
     const onlineCount = accounts.filter((a) => a.live_status !== 'offline').length;
 
-    return { totalRuns, winrate, totalSec, avgSec, lootTotals, gemsPerHr, onlineCount };
+    return { totalRuns, winrate, totalSec, avgSec, lootTotals, gemsPerHr, pearlsPerHr, onlineCount };
   }, [logs, accounts, hours]);
 
   const originUrl =
@@ -332,7 +333,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
 
       {/* Top Navbar */}
       <header className="sticky top-0 z-20 border-b border-red-500/25 bg-[#0c0709]/85 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
+        <div className="max-w-[1520px] mx-auto px-4 sm:px-8 h-16 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 rounded-xl border bg-red-600/20 border-red-500/45 text-red-400 shadow-[0_0_15px_rgba(220,38,38,0.35)] flex items-center justify-center">
               <Flame className="w-5 h-5" />
@@ -419,7 +420,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
         </div>
       </header>
 
-      <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+      <main className="relative z-10 max-w-[1520px] mx-auto px-4 sm:px-8 py-6 space-y-6">
         {tab === 'profile' && (
           <>
             {accounts.length === 0 ? (
@@ -606,70 +607,70 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                   </div>
 
                   {/* Currency & Stats Grid */}
-                  <div className="grid grid-cols-2 gap-2.5 mb-4">
-                    <div className="rounded-xl border border-purple-500/25 bg-[#0e0a1e]/90 p-3 flex items-center gap-2.5">
-                      <img src="/icons/gems.png" alt="Gems" className="w-8 h-8 object-contain shrink-0" />
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div className="rounded-xl border border-red-500/25 bg-[#12070a]/90 p-3.5 flex items-center gap-3">
+                      <img src="/icons/gems.png" alt="Gems" className="w-9 h-9 object-contain shrink-0" />
                       <div className="min-w-0">
-                        <div className="text-[10px] text-zinc-400">เพชร (Gems)</div>
-                        <div className="text-sm font-bold text-white truncate">
+                        <div className="text-[11px] text-zinc-400">เพชร (Gems)</div>
+                        <div className="text-base font-bold text-white truncate">
                           {formatCompact(Number(activeCurrencies['Gems'] || 0))}
                         </div>
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-purple-500/25 bg-[#0e0a1e]/90 p-3 flex items-center gap-2.5">
+                    <div className="rounded-xl border border-red-500/25 bg-[#12070a]/90 p-3.5 flex items-center gap-3">
                       <img
                         src="/icons/pearls.png"
                         alt="Summer Pearls"
-                        className="w-8 h-8 object-contain shrink-0"
+                        className="w-9 h-9 object-contain shrink-0"
                       />
                       <div className="min-w-0">
-                        <div className="text-[10px] text-zinc-400">SummerPearls</div>
-                        <div className="text-sm font-bold text-pink-200 truncate">
+                        <div className="text-[11px] text-zinc-400">SummerPearls</div>
+                        <div className="text-base font-bold text-pink-200 truncate">
                           {formatCompact(Number(activeCurrencies['Summer Pearls'] || 0))}
                         </div>
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-purple-500/25 bg-[#0e0a1e]/90 p-3 flex items-center gap-2.5">
-                      <img src="/icons/gold.png" alt="Gold" className="w-8 h-8 object-contain shrink-0" />
+                    <div className="rounded-xl border border-red-500/25 bg-[#12070a]/90 p-3.5 flex items-center gap-3">
+                      <img src="/icons/gold.png" alt="Gold" className="w-9 h-9 object-contain shrink-0" />
                       <div className="min-w-0">
-                        <div className="text-[10px] text-zinc-400">ทอง (Gold)</div>
-                        <div className="text-sm font-bold text-amber-200 truncate">
+                        <div className="text-[11px] text-zinc-400">ทอง (Gold)</div>
+                        <div className="text-base font-bold text-amber-200 truncate">
                           {Number(activeCurrencies['Gold'] || 0).toLocaleString()}
                         </div>
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-amber-500/30 bg-[#140e1a]/90 p-3 flex items-center gap-2.5">
+                    <div className="rounded-xl border border-amber-500/35 bg-[#160a0d]/90 p-3.5 flex items-center gap-3">
                       <img
                         src="/icons/dawn_coin.jpg"
                         alt="Dawn Coins"
-                        className="w-8 h-8 rounded-full object-cover shrink-0"
+                        className="w-9 h-9 rounded-full object-cover shrink-0"
                       />
                       <div className="min-w-0">
-                        <div className="text-[10px] text-amber-300/80">Dawn Coins</div>
-                        <div className="text-sm font-bold text-amber-300 truncate">
+                        <div className="text-[11px] text-amber-300/80">Dawn Coins</div>
+                        <div className="text-base font-bold text-amber-300 truncate">
                           {Number(activeCurrencies['Dawn Coins'] || 0).toLocaleString()}
                         </div>
                       </div>
                     </div>
 
-                    <div className="col-span-2 rounded-xl border border-purple-500/25 bg-[#0e0a1e]/90 p-3 flex items-center justify-between gap-2.5">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-300 shrink-0">
+                    <div className="col-span-2 rounded-xl border border-red-500/25 bg-[#12070a]/90 p-3.5 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-lg bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-300 shrink-0">
                           <Clock className="w-4 h-4" />
                         </div>
                         <div>
-                          <div className="text-[10px] text-zinc-400">เวลาแมตช์ที่บันทึก</div>
-                          <div className="text-sm font-bold text-white">
+                          <div className="text-[11px] text-zinc-400">เวลาแมตช์ที่บันทึก</div>
+                          <div className="text-base font-bold text-white">
                             {formatDuration(analytics.totalSec)}
                           </div>
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-[10px] text-zinc-400">Winrate</div>
-                        <div className="text-xs font-bold text-emerald-400">
+                        <div className="text-[11px] text-zinc-400">Winrate</div>
+                        <div className="text-sm font-bold text-emerald-400">
                           {analytics.winrate}% ({analytics.totalRuns} รอบ)
                         </div>
                       </div>
@@ -677,18 +678,62 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                   </div>
 
                   {/* Card Footer */}
-                  <div className="pt-3 border-t border-purple-500/20 flex items-center justify-between text-[11px] text-zinc-400">
+                  <div className="pt-3 border-t border-red-500/20 flex items-center justify-between text-xs text-zinc-400">
                     <span>อัปเดต: {timeAgo(activeAccount.last_heartbeat)}</span>
-                    <span className="text-purple-300">
+                    <span className="text-red-300 font-medium">
                       บอท {selectedIdx + 1} / {accounts.length}
                     </span>
                   </div>
                 </section>
 
-                {/* RIGHT COLUMN: Inventory / Portals Grid + Recent Runs */}
+                {/* RIGHT COLUMN: Live KPIs + Inventory Grid + Recent Runs */}
                 <section className="lg:col-span-8 space-y-5">
+                  {/* Live KPI Strip */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
+                      <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
+                        <span>บอทออนไลน์</span>
+                        <Bot className="w-4 h-4 text-emerald-400" />
+                      </div>
+                      <div className="text-xl font-bold text-white">
+                        {analytics.onlineCount}{' '}
+                        <span className="text-xs font-normal text-zinc-500">/ {accounts.length}</span>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
+                      <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
+                        <span>Gems / ชม.</span>
+                        <img src="/icons/gems.png" alt="Gems" className="w-4 h-4 object-contain" />
+                      </div>
+                      <div className="text-xl font-bold text-white">
+                        {analytics.gemsPerHr.toLocaleString()}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
+                      <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
+                        <span>Pearls / ชม.</span>
+                        <img src="/icons/pearls.png" alt="Pearls" className="w-4 h-4 object-contain" />
+                      </div>
+                      <div className="text-xl font-bold text-pink-200">
+                        {analytics.pearlsPerHr.toLocaleString()}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
+                      <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
+                        <span>เฉลี่ยต่อรอบ</span>
+                        <Clock className="w-4 h-4 text-red-400" />
+                      </div>
+                      <div className="text-xl font-bold text-white">
+                        {formatDuration(analytics.avgSec)}
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Top Rarity Tabs & Filter */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-purple-500/25 bg-[#120e24]/85 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3">
                     <div className="flex flex-wrap items-center gap-1.5">
                       {(['ALL', 'Secret', 'Mythic', 'Legendary'] as const).map((r) => (
                         <button
@@ -697,11 +742,11 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                           className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
                             rarityFilter === r
                               ? r === 'Secret'
-                                ? 'bg-rose-500/20 border-rose-500/60 text-rose-200'
+                                ? 'bg-rose-500/25 border-rose-500/60 text-rose-200'
                                 : r === 'Legendary'
-                                ? 'bg-amber-500/20 border-amber-500/60 text-amber-200'
-                                : 'bg-purple-600/30 border-purple-400/60 text-white'
-                              : 'bg-[#0b0818] border-purple-500/15 text-zinc-400 hover:text-white'
+                                ? 'bg-amber-500/25 border-amber-500/60 text-amber-200'
+                                : 'bg-red-600/30 border-red-400/60 text-white'
+                              : 'bg-[#0b0608] border-red-500/15 text-zinc-400 hover:text-white'
                           }`}
                         >
                           {r === 'ALL' ? 'ทั้งหมด' : r}
@@ -710,12 +755,12 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                     </div>
 
                     <div className="relative">
-                      <Search className="w-3.5 h-3.5 text-purple-300/60 absolute left-3 top-2.5" />
+                      <Search className="w-3.5 h-3.5 text-red-300/60 absolute left-3 top-2.5" />
                       <input
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                         placeholder="ค้นหาพอร์ทัล / ไอเทม..."
-                        className="pl-8 pr-3 py-1.5 text-xs rounded-xl bg-[#090714] border border-purple-500/25 focus:outline-none focus:border-purple-400 text-zinc-100"
+                        className="pl-8 pr-3 py-1.5 text-xs rounded-xl bg-[#090506] border border-red-500/25 focus:outline-none focus:border-red-400 text-zinc-100"
                       />
                     </div>
                   </div>
@@ -729,7 +774,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                         return (
                           <div
                             key={`${item.name}-${idx}`}
-                            className={`rounded-2xl border p-4 flex flex-col justify-between min-h-[148px] transition hover:scale-[1.01] ${style.card}`}
+                            className={`rounded-2xl border p-4 flex flex-col justify-between min-h-[156px] transition hover:scale-[1.01] ${style.card}`}
                           >
                             <div className="flex justify-end">
                               <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-black/40 border border-white/10 text-zinc-100">
@@ -742,7 +787,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                                 <img
                                   src={icon}
                                   alt={item.name}
-                                  className="w-16 h-16 object-contain drop-shadow-[0_0_12px_rgba(168,85,247,0.4)]"
+                                  className="w-16 h-16 object-contain drop-shadow-[0_0_12px_rgba(220,38,38,0.4)]"
                                 />
                               ) : (
                                 <Sparkles className={`w-10 h-10 ${style.text}`} />
@@ -762,9 +807,9 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                       })}
                     </div>
                   ) : (
-                    <div className="rounded-2xl border border-purple-500/25 bg-[#120e24]/60 p-6 text-center space-y-2">
+                    <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/70 p-5 text-center space-y-1">
                       <p className="text-xs text-zinc-300">
-                        ยังไม่มีรายการ Portal / Stat Cube จากบอทนี้ (จะซิงค์อัตโนมัติในรอบ Heartbeat ถัดไปหลังจากอัปเดตสคริปต์)
+                        ยังไม่มีรายการ Portal / Stat Cube จากบอทนี้ (ระบบจะซิงค์เมื่อเปิดกระเป๋า Items หรือจบ Dungeon Room)
                       </p>
                     </div>
                   )}
