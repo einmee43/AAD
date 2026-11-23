@@ -116,14 +116,34 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: accErr?.message || 'Account upsert failed' }, { status: 500 });
     }
 
-    // Update inventory snapshot if provided
+    // Update inventory snapshot if provided (preserve existing currencies like Dawn Coins when in-game)
     if (body.currencies || body.items) {
+      const { data: existingSnap } = await admin
+        .from('inventory_snapshots')
+        .select('currencies, items')
+        .eq('account_id', accountRow.id)
+        .maybeSingle();
+
+      const mergedCurrencies = {
+        ...(existingSnap?.currencies && typeof existingSnap.currencies === 'object'
+          ? existingSnap.currencies
+          : {}),
+        ...(body.currencies && typeof body.currencies === 'object' ? body.currencies : {}),
+      };
+
+      const mergedItems =
+        Array.isArray(body.items) && body.items.length > 0
+          ? body.items
+          : Array.isArray(existingSnap?.items)
+          ? existingSnap.items
+          : [];
+
       await admin.from('inventory_snapshots').upsert(
         {
           user_id: userId,
           account_id: accountRow.id,
-          currencies: body.currencies || {},
-          items: Array.isArray(body.items) ? body.items : [],
+          currencies: mergedCurrencies,
+          items: mergedItems,
           updated_at: nowIso,
         },
         { onConflict: 'account_id' }

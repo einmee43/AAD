@@ -270,9 +270,13 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
 
   const activeSnap = activeAccount ? snapshotMap.get(activeAccount.id) : undefined;
   const activeCurrencies = activeSnap?.currencies || {};
-  const level = activeCurrencies['_level'] || 0;
-  const xp = activeCurrencies['_xp'] || 0;
-  const maxXp = activeCurrencies['_max_xp'] || 0;
+  const rawLevel = activeCurrencies['_level'] || 0;
+  const rawXp = activeCurrencies['_xp'] || 0;
+  const rawMaxXp = activeCurrencies['_max_xp'] || 0;
+  const isPlaceholderLvl = rawLevel >= 999 || rawMaxXp === 999999;
+  const level = isPlaceholderLvl ? 0 : rawLevel;
+  const xp = isPlaceholderLvl ? 0 : rawXp;
+  const maxXp = isPlaceholderLvl ? 0 : rawMaxXp;
   const xpPct =
     level > 0 && maxXp > 0
       ? Math.min(100, Math.round((xp / maxXp) * 1000) / 10)

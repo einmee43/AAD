@@ -52,7 +52,6 @@ local function readCurrencies()
         ["Gems"] = 0,
         ["Gold"] = 0,
         ["Summer Pearls"] = 0,
-        ["Dawn Coins"] = 0,
     }
     local ready = false
     pcall(function()
@@ -77,48 +76,53 @@ local function readCurrencies()
 
         local pg = LocalPlayer:FindFirstChild("PlayerGui")
         if pg then
-            -- Dawn Coins from SummonGUI.Main.TopBar.Currency.ResourceFrame.Level
+            -- Dawn Coins from SummonGUI.Main.TopBar.Currency.ResourceFrame.Level (only present/populated in Lobby)
             pcall(function()
-                local rf = pg:FindFirstChild("SummonGUI")
-                    and pg.SummonGUI:FindFirstChild("Main")
-                    and pg.SummonGUI.Main:FindFirstChild("TopBar")
-                    and pg.SummonGUI.Main.TopBar:FindFirstChild("Currency")
-                    and pg.SummonGUI.Main.TopBar.Currency:FindFirstChild("ResourceFrame")
-                    and pg.SummonGUI.Main.TopBar.Currency.ResourceFrame:FindFirstChild("Level")
-                if rf and rf:IsA("TextLabel") then
-                    local cleaned = rf.Text:gsub(",", "")
+                local sg = pg:FindFirstChild("SummonGUI")
+                local main = sg and sg:FindFirstChild("Main")
+                local top = main and main:FindFirstChild("TopBar")
+                local cur = top and top:FindFirstChild("Currency")
+                local rf = cur and cur:FindFirstChild("ResourceFrame")
+                local lbl = rf and rf:FindFirstChild("Level")
+                if lbl and lbl:IsA("TextLabel") then
+                    local cleaned = lbl.Text:gsub(",", "")
                     local num = tonumber(cleaned)
-                    if num then
+                    if num and (num > 0 or game.PlaceId == 8304191830) then
                         currencies["Dawn Coins"] = num
                     end
                 end
             end)
 
-            -- Level & XP from ProfileGUI or spawn_units ("Level 263 [1012/1934]")
+            -- Level & XP from exact paths: ProfileGUI.Main.ProfileBanner.XP.Desc.Level or spawn_units.Lives.Main.Desc.Level
             pcall(function()
-                local lvlText = nil
+                local candidates = {}
                 local pGui = pg:FindFirstChild("ProfileGUI")
                 if pGui then
-                    local lbl = pGui:FindFirstChild("Level", true)
-                    if lbl and lbl:IsA("TextLabel") and lbl.Text:find("%[") then
-                        lvlText = lbl.Text
-                    end
+                    local m = pGui:FindFirstChild("Main")
+                    local pb = m and m:FindFirstChild("ProfileBanner")
+                    local xpF = pb and pb:FindFirstChild("XP")
+                    local desc = xpF and xpF:FindFirstChild("Desc")
+                    local lbl = desc and desc:FindFirstChild("Level")
+                    if lbl and lbl:IsA("TextLabel") then table.insert(candidates, lbl.Text) end
                 end
-                if not lvlText then
-                    local su = pg:FindFirstChild("spawn_units")
-                    if su then
-                        local lbl = su:FindFirstChild("Level", true)
-                        if lbl and lbl:IsA("TextLabel") and lbl.Text:find("%[") then
-                            lvlText = lbl.Text
-                        end
-                    end
+                local su = pg:FindFirstChild("spawn_units")
+                if su then
+                    local lives = su:FindFirstChild("Lives")
+                    local main = lives and lives:FindFirstChild("Main")
+                    local desc = main and main:FindFirstChild("Desc")
+                    local lbl = desc and desc:FindFirstChild("Level")
+                    if lbl and lbl:IsA("TextLabel") then table.insert(candidates, lbl.Text) end
                 end
-                if lvlText then
-                    local lv, curXp, maxXp = lvlText:match("Level%s+(%d+)%s*%[(%d+)/(%d+)%]")
-                    if lv then
-                        currencies["_level"] = tonumber(lv) or 0
+
+                for _, txt in ipairs(candidates) do
+                    local lv, curXp, maxXp = txt:match("Level%s+(%d+)%s*%[(%d+)/(%d+)%]")
+                    local lvNum = tonumber(lv)
+                    local maxNum = tonumber(maxXp)
+                    if lvNum and lvNum > 0 and lvNum < 999 and maxNum ~= 999999 then
+                        currencies["_level"] = lvNum
                         currencies["_xp"] = tonumber(curXp) or 0
-                        currencies["_max_xp"] = tonumber(maxXp) or 100
+                        currencies["_max_xp"] = maxNum or 100
+                        break
                     end
                 end
             end)
