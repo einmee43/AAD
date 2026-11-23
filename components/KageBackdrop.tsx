@@ -20,7 +20,7 @@ export default function KageBackdrop() {
       <iframe
         src="/bg/phase-space/index.html"
         title="Phase Space Background"
-        className="absolute inset-0 w-full h-full border-0 pointer-events-none blur-[3px] scale-[1.03]"
+        className="absolute inset-0 w-full h-full border-0 pointer-events-none blur-xl scale-110"
         tabIndex={-1}
       />
       <div
@@ -31,7 +31,7 @@ export default function KageBackdrop() {
             'radial-gradient(circle, rgba(255,74,99,0.14) 0%, rgba(255,154,31,0.05) 40%, transparent 70%)',
         }}
       />
-      <div className="absolute inset-0 bg-[#070506]/25" />
+      <div className="absolute inset-0 bg-[#070506]/55" />
     </div>
   );
 }
