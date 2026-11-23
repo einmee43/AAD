@@ -831,6 +831,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                         ).map((t) => (
                           <button
                             key={t.id}
+                            role="tab"
                             onClick={() => setInventoryTab(t.id)}
                             aria-selected={inventoryTab === t.id}
                             className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${
@@ -874,7 +875,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                     {inventoryTab === 'portals' && (
                       <div className="space-y-2 pt-2 border-t border-white/5">
                         <div className="flex flex-wrap items-center gap-1.5">
-                          {['ALL', 'Alien', 'Puppet', 'Shibuya', 'Sky', 'Explosion', 'Demon'].map((kind) => (
+                          {['ALL', 'Eclipse', 'Explosion', 'Alien', 'Puppet', 'Shibuya', 'Sky', 'Demon'].map((kind) => (
                             <button
                               key={kind}
                               onClick={() => setPortalKind(kind)}
@@ -889,7 +890,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                           ))}
                         </div>
                         <div className="flex flex-wrap items-center gap-1.5">
-                          {['ALL', 'T10', 'T9', 'T8', 'T7', 'T6', 'T5', 'T4', 'T3'].map((tier) => (
+                          {['ALL', 'T10', 'T9', 'T8', 'T7', 'T6', 'T5', 'T4', 'T3', 'T0'].map((tier) => (
                             <button
                               key={tier}
                               onClick={() => setPortalTier(tier)}

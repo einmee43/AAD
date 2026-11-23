@@ -146,14 +146,19 @@ local function readCurrencies()
     return currencies, ready
 end
 
--- Scan inventory items from PlayerGui.items.grid.List.Outer.ItemFrames (and fallback folders)
+-- Scan inventory items from PlayerGui.items.grid.List.Outer.ItemFrames (preserves previously viewed tabs like Portals vs Items)
+local cachedCategoryItems = { portal = {}, item = {} }
+
 local function readUsefulItems()
-    local counts = {}
+    local seenPortal = false
+    local seenItem = false
+    local counts = { portal = {}, item = {} }
+
     local function inferRarity(rawName, idName)
         local low = (rawName .. " " .. (idName or "")):lower()
-        if low:find("secret") or low:find("explosion") or low:find("demon") or low:find("perfect") or low:find("conqueror") or low:find("compass") then
+        if low:find("secret") or low:find("explosion") or low:find("demon") or low:find("perfect") or low:find("conqueror") or low:find("compass") or low:find("divine") then
             return "Secret"
-        elseif low:find("portal") or low:find("cube") or low:find("remnant") or low:find("reroll") or low:find("key") or low:find("orb") or low:find("ball") or low:find("staff") or low:find("wings") then
+        elseif low:find("portal") or low:find("cube") or low:find("remnant") or low:find("reroll") or low:find("key") or low:find("orb") or low:find("ball") or low:find("staff") or low:find("wings") or low:find("dawn") or low:find("charm") then
             return "Mythic"
         else
             return "Legendary"
@@ -169,20 +174,22 @@ local function readUsefulItems()
             return
         end
         local isPortal = low:find("portal") ~= nil or (idName and idName:lower():find("portal") ~= nil)
+        local cat = isPortal and "portal" or "item"
+        if isPortal then seenPortal = true else seenItem = true end
         local key = trimmed .. (extra and extra.tier and ("_" .. extra.tier) or "")
-        if not counts[key] then
-            counts[key] = {
+        if not counts[cat][key] then
+            counts[cat][key] = {
                 name = trimmed,
                 amount = 0,
                 rarity = inferRarity(trimmed, idName),
-                category = isPortal and "portal" or "item",
+                category = cat,
                 tier = extra and extra.tier or nil,
                 hearts = extra and extra.hearts or nil,
                 multiplier = extra and extra.multiplier or nil,
                 mods = extra and extra.mods or nil,
             }
         end
-        counts[key].amount = counts[key].amount + (tonumber(amt) or 1)
+        counts[cat][key].amount = counts[cat][key].amount + (tonumber(amt) or 1)
     end
 
     pcall(function()
@@ -232,8 +239,18 @@ local function readUsefulItems()
         end
     end)
 
+    if seenPortal then
+        cachedCategoryItems.portal = counts.portal
+    end
+    if seenItem then
+        cachedCategoryItems.item = counts.item
+    end
+
     local list = {}
-    for _, v in pairs(counts) do
+    for _, v in pairs(cachedCategoryItems.portal) do
+        table.insert(list, v)
+    end
+    for _, v in pairs(cachedCategoryItems.item) do
         table.insert(list, v)
     end
     return list
@@ -253,17 +270,17 @@ local function readEquippedTeam()
         for slot = 1, 6 do
             local slotObj = units:FindFirstChild(tostring(slot))
             if slotObj and slotObj:IsA("GuiObject") and slotObj.Visible then
-                local nameLbl = slotObj:FindFirstChild("name")
+                local nameLbl = slotObj:FindFirstChild("name", true)
                 local unitName = (nameLbl and nameLbl:IsA("TextLabel") and nameLbl.Text) or ""
                 if #unitName > 0 and unitName ~= "Unit" and unitName ~= "Empty" then
                     local lvl = slotObj:GetAttribute("Level")
                     if not lvl then
-                        local lvlLbl = slotObj:FindFirstChild("Level") or slotObj:FindFirstChild("Lvl") or slotObj:FindFirstChild("locked_text")
+                        local lvlLbl = slotObj:FindFirstChild("Level", true) or slotObj:FindFirstChild("Lvl", true)
                         if lvlLbl and lvlLbl:IsA("TextLabel") then
                             lvl = tonumber((lvlLbl.Text:gsub("[^%d]", "")))
                         end
                     end
-                    local costLbl = slotObj:FindFirstChild("cost")
+                    local costLbl = slotObj:FindFirstChild("text", true) or slotObj:FindFirstChild("cost", true)
                     local costVal = (costLbl and costLbl:IsA("TextLabel") and costLbl.Text ~= "9999") and tonumber((costLbl.Text:gsub("[^%d]", ""))) or nil
                     table.insert(team, {
                         slot = slot,
