@@ -1,12 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import KageBackdrop from '@/components/KageBackdrop';
 import NextyLogo from '@/components/NextyLogo';
 import AvatarStage3D from '@/components/AvatarStage3D';
 import {
   Activity,
+  Bell,
   Bot,
   Check,
   ChevronLeft,
@@ -26,6 +27,7 @@ import {
   TrendingUp,
   Trophy,
   Waves,
+  X,
 } from 'lucide-react';
 
 interface UserInfo {
@@ -204,6 +206,23 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [keyError, setKeyError] = useState<string | null>(null);
 
+  // In-web notifications
+  type WebAlert = {
+    id: string;
+    title: string;
+    subtitle: string;
+    rewards: string;
+    isRare: boolean;
+    result: 'Win' | 'Lose';
+    createdAt: string;
+  };
+  const [alerts, setAlerts] = useState<WebAlert[]>([]);
+  const [toasts, setToasts] = useState<WebAlert[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showAlerts, setShowAlerts] = useState(false);
+  const seenLogIdsRef = useRef<Set<string>>(new Set());
+  const logsInitializedRef = useRef(false);
+
   const loadDashboard = useCallback(async () => {
     const res = await fetch(`/api/dashboard?hours=${hours}`);
     if (res.ok) {
@@ -259,6 +278,62 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
       clearInterval(timer);
     };
   }, [hours, loadDashboard]);
+
+  // Detect new run_logs on auto-refresh and fire in-web alerts + toasts
+  useEffect(() => {
+    if (!logsInitializedRef.current) {
+      if (logs.length > 0) {
+        logs.forEach((l) => seenLogIdsRef.current.add(l.id));
+        logsInitializedRef.current = true;
+      }
+      return;
+    }
+
+    const freshLogs = logs.filter((l) => !seenLogIdsRef.current.has(l.id));
+    if (freshLogs.length === 0) return;
+
+    freshLogs.forEach((l) => seenLogIdsRef.current.add(l.id));
+    const newAlerts: WebAlert[] = freshLogs.map((l) => {
+      const cleanRewards = (l.rewards || []).filter((r) => !isJunkReward(r.name));
+      const isRare = cleanRewards.some((r) => {
+        const rr = (r.rarity || '').toLowerCase();
+        const rn = r.name.toLowerCase();
+        return (
+          ['secret', 'mythic', 'legendary'].includes(rr) ||
+          rn.includes('portal') ||
+          rn.includes('remnant') ||
+          rn.includes('cube') ||
+          rn.includes('dawn')
+        );
+      });
+      const rewardSummary =
+        cleanRewards.length > 0
+          ? cleanRewards
+              .slice(0, 3)
+              .map((r) => `${r.name} x${r.amount.toLocaleString()}`)
+              .join(' • ')
+          : 'ไม่มีของดรอปเพิ่ม';
+      return {
+        id: l.id,
+        title: `${l.bot_name} • ${l.mode} (${l.result})`,
+        subtitle: `${l.map_name} • ${formatDuration(l.duration_sec)}`,
+        rewards: rewardSummary,
+        isRare,
+        result: l.result,
+        createdAt: l.created_at,
+      };
+    });
+
+    setAlerts((prev) => [...newAlerts, ...prev].slice(0, 15));
+    setUnreadCount((c) => c + newAlerts.length);
+    setToasts((prev) => [...newAlerts, ...prev].slice(0, 3));
+
+    const timer = setTimeout(() => {
+      const ids = new Set(newAlerts.map((a) => a.id));
+      setToasts((prev) => prev.filter((t) => !ids.has(t.id)));
+    }, 7000);
+    return () => clearTimeout(timer);
+  }, [logs]);
 
   // Keep selectedIdx valid
   const activeAccount = accounts[selectedIdx] || accounts[0] || null;
@@ -467,6 +542,67 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                 <span className="hidden sm:inline">API Keys</span>
               </button>
             </nav>
+
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setShowAlerts((v) => !v);
+                  setUnreadCount(0);
+                }}
+                title="แจ้งเตือนในเว็บ"
+                className="aa-btn aa-btn--icon relative"
+              >
+                <Bell className="w-4 h-4" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-[10px] font-bold text-white flex items-center justify-center shadow-[0_0_8px_rgba(239,68,68,0.8)]">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {showAlerts && (
+                <div className="absolute right-0 mt-2 w-80 rounded-2xl border border-red-500/30 bg-[#12070a]/95 backdrop-blur-xl shadow-2xl p-3 z-50 space-y-2">
+                  <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                    <span className="text-xs font-bold text-red-200">แจ้งเตือนในเว็บล่าสุด</span>
+                    {alerts.length > 0 && (
+                      <button
+                        onClick={() => setAlerts([])}
+                        className="text-[11px] text-zinc-400 hover:text-red-300 cursor-pointer"
+                      >
+                        ล้างทั้งหมด
+                      </button>
+                    )}
+                  </div>
+                  {alerts.length === 0 ? (
+                    <div className="py-5 text-center text-xs text-zinc-400">
+                      ยังไม่มีแจ้งเตือนใหม่ (ระบบเช็กอัตโนมัติทุก 15 วิ)
+                    </div>
+                  ) : (
+                    <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                      {alerts.map((a) => (
+                        <div
+                          key={a.id}
+                          className={`rounded-xl border p-2.5 text-xs ${
+                            a.isRare
+                              ? 'border-amber-500/45 bg-amber-950/25'
+                              : 'border-red-500/20 bg-black/40'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold text-white truncate">{a.title}</span>
+                            <span className="text-[10px] text-zinc-400 shrink-0">
+                              {timeAgo(a.createdAt)}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-zinc-400 truncate mt-0.5">{a.subtitle}</div>
+                          <div className="text-[11px] text-emerald-300 truncate mt-1">{a.rewards}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             <button
               onClick={fetchDashboard}
@@ -1463,6 +1599,39 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/einmee43/AAD/main/aa_
           </div>
         )}
       </main>
+
+      {/* Live In-Web Toast Notifications */}
+      {toasts.length > 0 && (
+        <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 w-80 max-w-[calc(100vw-2rem)]">
+          {toasts.map((t) => (
+            <div
+              key={t.id}
+              className={`rounded-2xl border p-3.5 shadow-2xl backdrop-blur-xl animate-fade-slide ${
+                t.isRare
+                  ? 'border-amber-400/60 bg-[#1a0d08]/95'
+                  : 'border-red-500/40 bg-[#14080b]/95'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-white truncate">{t.title}</div>
+                  <div className="text-[11px] text-zinc-400 truncate">{t.subtitle}</div>
+                  <div className="text-[11px] font-medium text-emerald-300 mt-1 truncate">
+                    {t.rewards}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
+                  className="text-zinc-400 hover:text-white cursor-pointer shrink-0"
+                  aria-label="ปิดแจ้งเตือน"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
