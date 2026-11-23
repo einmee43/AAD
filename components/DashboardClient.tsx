@@ -5,6 +5,9 @@ import { createClient } from '@/lib/supabase/client';
 import KageBackdrop from '@/components/KageBackdrop';
 import NextyLogo from '@/components/NextyLogo';
 import AvatarStage3D from '@/components/AvatarStage3D';
+import unitRarities from '@/lib/unitRarities.json';
+
+const unitRarityMap = unitRarities as Record<string, string>;
 import {
   Activity,
   Bell,
@@ -95,29 +98,40 @@ function getTraitIcon(trait?: string | null): string | null {
   return null;
 }
 
-function getUnitFrameBorder(name: string): string {
+function getUnitCardTheme(name: string, trait?: string | null) {
   const n = name.toLowerCase();
-  if (
+  const r = (unitRarityMap[n] || '').toLowerCase();
+  const t = (trait || '').toLowerCase();
+  const isRainbow =
+    r === 'secret' ||
+    r === 'exclusive' ||
+    t === 'unique' ||
     n.includes('elyssia') ||
     n.includes('alucard') ||
     n.includes('ainz') ||
     n.includes('dazai') ||
     n.includes('roger') ||
-    n.includes('homura') ||
-    n.includes('secret')
-  ) {
-    return 'p-[2px] bg-gradient-to-br from-cyan-400 via-fuchsia-500 to-amber-300 shadow-[0_0_14px_rgba(34,211,238,0.35)]';
+    n.includes('homura');
+
+  if (isRainbow) {
+    return {
+      frame:
+        'p-[2.5px] bg-[linear-gradient(135deg,#22d3ee,#3b82f6,#22c55e,#eab308,#ef4444,#a855f7)] shadow-[0_0_16px_rgba(34,211,238,0.32)]',
+      innerBg: 'linear-gradient(180deg, #1d4332 0%, #0f241b 100%)',
+    };
   }
-  if (
-    n.includes('windsong') ||
-    n.includes('bulby') ||
-    n.includes('erwin') ||
-    n.includes('speedwagon') ||
-    n.includes('orwin')
-  ) {
-    return 'p-[2px] bg-gradient-to-b from-amber-300 via-amber-500 to-yellow-700 shadow-[0_0_12px_rgba(245,158,11,0.28)]';
+  if (r === 'legendary' || n.includes('windsong') || n.includes('bulby')) {
+    return {
+      frame:
+        'p-[2.5px] bg-gradient-to-b from-amber-300 via-amber-500 to-yellow-700 shadow-[0_0_14px_rgba(245,158,11,0.28)]',
+      innerBg: 'linear-gradient(180deg, #3c2a12 0%, #1c1207 100%)',
+    };
   }
-  return 'p-[2px] bg-gradient-to-b from-purple-400 via-purple-600 to-indigo-800 shadow-[0_0_12px_rgba(168,85,247,0.28)]';
+  return {
+    frame:
+      'p-[2.5px] bg-gradient-to-b from-fuchsia-400 via-purple-600 to-indigo-800 shadow-[0_0_14px_rgba(168,85,247,0.28)]',
+    innerBg: 'linear-gradient(180deg, #2d1849 0%, #140b24 100%)',
+  };
 }
 
 interface RunLog {
@@ -970,14 +984,12 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                      {/* 6 Equipped Unit Slots (in-game AA bar style, uniform 80x80) */}
+                      {/* 6 Equipped Unit Slots (aavalues.trade halftone + rarity frame style) */}
                       {[1, 2, 3, 4, 5, 6].map((slotNum) => {
                         const unit = activeTeam.find((u) => u.slot === slotNum);
                         const unitImg = unit ? unitIconCache[unit.name] : '';
                         const traitImg = unit ? getTraitIcon(unit.trait) : null;
-                        const frameClass = unit
-                          ? getUnitFrameBorder(unit.name)
-                          : 'border border-white/10 bg-black/30 opacity-45';
+                        const theme = unit ? getUnitCardTheme(unit.name, unit.trait) : null;
                         return (
                           <div
                             key={slotNum}
@@ -988,23 +1000,37 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                                   }`
                                 : `ช่องที่ ${slotNum} ว่าง`
                             }
-                            className={`w-[74px] h-[74px] sm:w-20 sm:h-20 rounded-xl shrink-0 transition-transform hover:-translate-y-0.5 ${frameClass}`}
+                            className={`w-[74px] h-[74px] sm:w-20 sm:h-20 rounded-xl shrink-0 transition-transform hover:-translate-y-0.5 ${
+                              theme ? theme.frame : 'border border-white/10 bg-black/30 opacity-45'
+                            }`}
                           >
-                            <div className="relative w-full h-full rounded-[10px] overflow-hidden bg-[#0e0b16] flex items-center justify-center">
+                            <div
+                              className="relative w-full h-full rounded-[9.5px] overflow-hidden flex items-center justify-center"
+                              style={theme ? { background: theme.innerBg } : undefined}
+                            >
                               {unit ? (
                                 <>
+                                  {/* Halftone polka-dot texture */}
+                                  <div
+                                    className="absolute inset-0 pointer-events-none opacity-65"
+                                    style={{
+                                      backgroundImage:
+                                        'radial-gradient(rgba(0,0,0,0.42) 1.5px, transparent 1.5px)',
+                                      backgroundSize: '8px 8px',
+                                    }}
+                                  />
                                   {unitImg ? (
                                     <img
                                       src={unitImg}
                                       alt={unit.name}
-                                      className="w-full h-full object-cover object-top scale-110"
+                                      className="relative z-10 w-full h-full object-contain object-bottom pt-1"
                                     />
                                   ) : (
-                                    <Shield className="w-6 h-6 text-purple-300/80" />
+                                    <Shield className="relative z-10 w-6 h-6 text-purple-300/80" />
                                   )}
-                                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/15 to-black/45 pointer-events-none" />
+                                  <div className="absolute inset-x-0 bottom-0 h-8 z-20 bg-gradient-to-t from-black/90 via-black/45 to-transparent pointer-events-none" />
                                   {unit.level ? (
-                                    <span className="absolute top-1 left-1.5 text-[10px] font-extrabold text-white leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.95)]">
+                                    <span className="absolute top-1 left-1.5 z-30 text-[10px] font-extrabold text-white leading-none [text-shadow:0_1px_3px_#000,0_0_4px_#000]">
                                       Lv. {unit.level}
                                     </span>
                                   ) : null}
@@ -1012,15 +1038,15 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                                     <img
                                       src={traitImg}
                                       alt={unit.trait || 'trait'}
-                                      className="absolute top-5 left-1.5 w-4 h-4 object-contain drop-shadow-[0_1px_3px_rgba(0,0,0,0.95)]"
+                                      className="absolute top-1 right-1 z-30 w-4 h-4 object-contain drop-shadow-[0_1px_3px_rgba(0,0,0,1)]"
                                     />
                                   )}
                                   {unit.cost ? (
-                                    <span className="absolute bottom-3.5 right-1.5 text-[10px] font-extrabold text-amber-300 leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.95)]">
+                                    <span className="absolute bottom-3.5 right-1.5 z-30 text-[9.5px] font-extrabold text-amber-300 leading-none [text-shadow:0_1px_2px_#000]">
                                       {unit.cost} ¥
                                     </span>
                                   ) : null}
-                                  <span className="absolute bottom-0.5 inset-x-1 text-center text-[9px] font-bold text-white truncate leading-tight drop-shadow-[0_1px_2px_rgba(0,0,0,1)]">
+                                  <span className="absolute bottom-0.5 inset-x-1 z-30 text-center text-[9px] font-bold text-white truncate leading-tight [text-shadow:0_1px_3px_#000,0_0_4px_#000]">
                                     {unit.name}
                                   </span>
                                 </>
@@ -1185,48 +1211,61 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                   {/* Inventory / Team Grid */}
                   {inventoryTab === 'team' ? (
                     activeTeam.length > 0 ? (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
-                        {activeTeam.map((unit) => (
-                          <div
-                            key={unit.slot}
-                            className="rounded-2xl border border-red-500/40 bg-gradient-to-b from-red-950/45 to-[#12070a] p-4 flex flex-col justify-between min-h-[140px] animate-fade-slide"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-black/45 border border-white/10 text-zinc-300">
-                                ช่อง #{unit.slot}
-                              </span>
-                              {unit.level ? (
-                                <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-red-500/20 border border-red-400/40 text-red-200 inline-flex items-center gap-1">
-                                  {getTraitIcon(unit.trait) && (
-                                    <img
-                                      src={getTraitIcon(unit.trait)!}
-                                      alt={unit.trait || 'trait'}
-                                      className="w-3.5 h-3.5 object-contain"
-                                    />
-                                  )}
-                                  Lv.{unit.level}
-                                </span>
-                              ) : null}
-                            </div>
-                            <div className="flex items-center justify-center py-2">
-                              {unitIconCache[unit.name] ? (
-                                <img
-                                  src={unitIconCache[unit.name]}
-                                  alt={unit.name}
-                                  className="w-16 h-16 rounded-xl object-cover border border-red-500/30 shadow-[0_0_12px_rgba(220,38,38,0.25)]"
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
+                        {activeTeam.map((unit) => {
+                          const theme = getUnitCardTheme(unit.name, unit.trait);
+                          const traitImg = getTraitIcon(unit.trait);
+                          return (
+                            <div
+                              key={unit.slot}
+                              className={`aspect-square rounded-2xl transition-transform hover:-translate-y-1 animate-fade-slide ${theme.frame}`}
+                            >
+                              <div
+                                className="relative w-full h-full rounded-[13px] overflow-hidden flex items-end justify-center"
+                                style={{ background: theme.innerBg }}
+                              >
+                                <div
+                                  className="absolute inset-0 pointer-events-none opacity-65"
+                                  style={{
+                                    backgroundImage:
+                                      'radial-gradient(rgba(0,0,0,0.42) 1.8px, transparent 1.8px)',
+                                    backgroundSize: '10px 10px',
+                                  }}
                                 />
-                              ) : (
-                                <Shield className="w-9 h-9 text-red-400/90" />
-                              )}
-                            </div>
-                            <div>
-                              <div className="text-xs font-bold text-white truncate">{unit.name}</div>
-                              <div className="text-[11px] text-zinc-400">
-                                {unit.cost ? `ค่าลง ${unit.cost.toLocaleString()}¥` : 'Equipped Unit'}
+                                {unitIconCache[unit.name] ? (
+                                  <img
+                                    src={unitIconCache[unit.name]}
+                                    alt={unit.name}
+                                    className="relative z-10 w-full h-full object-contain object-bottom pt-2"
+                                  />
+                                ) : (
+                                  <Shield className="relative z-10 w-10 h-10 mb-8 text-purple-300/80" />
+                                )}
+                                <div className="absolute inset-x-0 bottom-0 h-12 z-20 bg-gradient-to-t from-black/90 via-black/45 to-transparent pointer-events-none" />
+                                {unit.level ? (
+                                  <span className="absolute top-2 left-2 z-30 text-[11px] font-extrabold text-white [text-shadow:0_1px_3px_#000]">
+                                    Lv. {unit.level}
+                                  </span>
+                                ) : null}
+                                {traitImg && (
+                                  <img
+                                    src={traitImg}
+                                    alt={unit.trait || 'trait'}
+                                    className="absolute top-2 right-2 z-30 w-5 h-5 object-contain drop-shadow-[0_1px_4px_rgba(0,0,0,1)]"
+                                  />
+                                )}
+                                {unit.cost ? (
+                                  <span className="absolute bottom-6 right-2 z-30 text-[11px] font-extrabold text-amber-300 [text-shadow:0_1px_3px_#000]">
+                                    {unit.cost} ¥
+                                  </span>
+                                ) : null}
+                                <div className="absolute bottom-1.5 inset-x-1.5 z-30 text-center text-xs font-extrabold text-white leading-tight truncate [text-shadow:0_1.5px_3px_#000,0_0_6px_#000]">
+                                  {unit.name}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     ) : (
                       <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/70 p-5 text-center space-y-1">
