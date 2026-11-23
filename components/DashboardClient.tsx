@@ -187,6 +187,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [keys, setKeys] = useState<ApiKeyRow[]>([]);
   const [avatarCache, setAvatarCache] = useState<Record<number, string>>({});
+  const [unitIconCache, setUnitIconCache] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
 
   // Filters
@@ -434,6 +435,32 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   const activeTeam: TeamUnit[] = Array.isArray(activeCurrencies['_team'])
     ? (activeCurrencies['_team'] as TeamUnit[])
     : [];
+
+  // Fetch unit portraits dynamically for equipped team
+  useEffect(() => {
+    const missing = activeTeam
+      .map((u) => u.name)
+      .filter((n) => n && unitIconCache[n] === undefined);
+    if (missing.length === 0) return;
+    let cancelled = false;
+    fetch(`/api/unit-icons?names=${encodeURIComponent(missing.join('|'))}`)
+      .then((r) => r.json())
+      .then((d: { icons?: Record<string, string> }) => {
+        if (cancelled) return;
+        const fetched = d?.icons || {};
+        setUnitIconCache((prev) => {
+          const next = { ...prev };
+          for (const m of missing) {
+            next[m] = fetched[m] || '';
+          }
+          return next;
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTeam, unitIconCache]);
 
   const allBotItems = activeSnap?.items || [];
   const portalItems = allBotItems.filter(
@@ -895,27 +922,41 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                         {[1, 2, 3, 4, 5, 6].map((slotNum) => {
                           const unit = activeTeam.find((u) => u.slot === slotNum);
+                          const unitImg = unit ? unitIconCache[unit.name] : '';
                           return (
                             <div
                               key={slotNum}
                               title={unit ? `${unit.name}${unit.level ? ` (Lv.${unit.level})` : ''}` : `ช่องที่ ${slotNum} ว่าง`}
-                              className={`w-20 rounded-xl border px-2 py-1.5 flex flex-col justify-between min-h-[54px] transition-colors ${
+                              className={`relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl border overflow-hidden flex items-center justify-center transition-all ${
                                 unit
-                                  ? 'border-red-500/40 bg-gradient-to-b from-red-950/50 to-[#0d0507]'
-                                  : 'border-white/10 bg-black/30 opacity-50'
+                                  ? 'border-red-500/45 bg-gradient-to-b from-red-950/60 to-[#0d0507] shadow-[0_0_12px_rgba(220,38,38,0.2)]'
+                                  : 'border-white/10 bg-black/30 opacity-45'
                               }`}
                             >
-                              <div className="flex items-center justify-between text-[10px]">
-                                <span className="text-zinc-500 font-semibold">#{slotNum}</span>
-                                {unit?.level ? (
-                                  <span className="px-1 rounded bg-red-500/20 text-red-200 font-bold">
-                                    Lv.{unit.level}
+                              {unit ? (
+                                <>
+                                  {unitImg ? (
+                                    <img
+                                      src={unitImg}
+                                      alt={unit.name}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <Shield className="w-6 h-6 text-red-400/80" />
+                                  )}
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-black/30 pointer-events-none" />
+                                  <span className="absolute top-1 left-1 text-[9px] font-bold text-zinc-300 leading-none">
+                                    #{slotNum}
                                   </span>
-                                ) : null}
-                              </div>
-                              <div className="text-[11px] font-semibold text-zinc-100 truncate mt-1">
-                                {unit ? unit.name : 'ว่าง'}
-                              </div>
+                                  {unit.level ? (
+                                    <span className="absolute bottom-1 inset-x-1 text-center text-[10px] font-bold text-white leading-none drop-shadow">
+                                      Lv.{unit.level}
+                                    </span>
+                                  ) : null}
+                                </>
+                              ) : (
+                                <span className="text-[10px] text-zinc-500">ว่าง</span>
+                              )}
                             </div>
                           );
                         })}
@@ -1091,7 +1132,15 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                               ) : null}
                             </div>
                             <div className="flex items-center justify-center py-2">
-                              <Shield className="w-9 h-9 text-red-400/90" />
+                              {unitIconCache[unit.name] ? (
+                                <img
+                                  src={unitIconCache[unit.name]}
+                                  alt={unit.name}
+                                  className="w-16 h-16 rounded-xl object-cover border border-red-500/30 shadow-[0_0_12px_rgba(220,38,38,0.25)]"
+                                />
+                              ) : (
+                                <Shield className="w-9 h-9 text-red-400/90" />
+                              )}
                             </div>
                             <div>
                               <div className="text-xs font-bold text-white truncate">{unit.name}</div>
