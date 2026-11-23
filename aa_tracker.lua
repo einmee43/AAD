@@ -46,12 +46,14 @@ local function postIngest(payload)
 end
 
 -- Scan ONLY useful player currencies: Gems, Gold, Summer Pearls
+-- Returns (currenciesTable, isReadyBool)
 local function readCurrencies()
     local currencies = {
         ["Gems"] = 0,
         ["Gold"] = 0,
         ["Summer Pearls"] = 0,
     }
+    local ready = false
     pcall(function()
         local stats = LocalPlayer:FindFirstChild("_stats")
         if stats then
@@ -60,16 +62,19 @@ local function readCurrencies()
             local pearlObj = stats:FindFirstChild("_resourceSummerPearls")
             if gemObj and gemObj:IsA("ValueBase") then
                 currencies["Gems"] = tonumber(gemObj.Value) or 0
+                ready = true
             end
             if goldObj and goldObj:IsA("ValueBase") then
                 currencies["Gold"] = tonumber(goldObj.Value) or 0
+                ready = true
             end
             if pearlObj and pearlObj:IsA("ValueBase") then
                 currencies["Summer Pearls"] = tonumber(pearlObj.Value) or 0
+                ready = true
             end
         end
     end)
-    return currencies
+    return currencies, ready
 end
 
 -- Detect current game state (Lobby vs Farming + Wave/Map)
@@ -94,8 +99,8 @@ local function detectState()
     return status, mode, mapName, waveStr
 end
 
--- Snapshot currencies at match start
-local startCurrencies = readCurrencies()
+-- Wait for _stats to load before taking initial snapshot (prevents reporting total balance as 1-run reward)
+local startCurrencies, statsReady = readCurrencies()
 local matchStartTime = os.time()
 local sentForCurrentMatch = false
 
@@ -103,15 +108,21 @@ local sentForCurrentMatch = false
 task.spawn(function()
     while true do
         local status, mode, mapName, waveStr = detectState()
-        local cur = readCurrencies()
-        postIngest({
-            event_type = "heartbeat",
-            status = status,
-            current_mode = mode,
-            current_map = mapName,
-            current_wave = waveStr,
-            currencies = cur
-        })
+        local cur, ready = readCurrencies()
+        if ready and not statsReady then
+            startCurrencies = cur
+            statsReady = true
+        end
+        if ready then
+            postIngest({
+                event_type = "heartbeat",
+                status = status,
+                current_mode = mode,
+                current_map = mapName,
+                current_wave = waveStr,
+                currencies = cur
+            })
+        end
         task.wait(45)
     end
 end)
@@ -126,31 +137,37 @@ task.spawn(function()
             local resultsUI = pg:FindFirstChild("ResultsUI")
             if resultsUI and resultsUI.Enabled and not sentForCurrentMatch then
                 sentForCurrentMatch = true
+                -- Wait 2s for server to finish crediting _stats after ResultsUI opens
+                task.wait(2)
                 local duration = math.max(1, os.time() - matchStartTime)
                 local _, mode, mapName, _ = detectState()
-                local endCurrencies = readCurrencies()
+                local endCurrencies, endReady = readCurrencies()
 
                 local rewards = {}
-                -- Currency diffs
-                for k, endVal in pairs(endCurrencies) do
-                    local diff = endVal - (startCurrencies[k] or endVal)
-                    if diff > 0 then
-                        table.insert(rewards, {
-                            name = k,
-                            amount = diff,
-                            category = "currency",
-                            rarity = "common"
-                        })
+                if statsReady and endReady then
+                    for k, endVal in pairs(endCurrencies) do
+                        local diff = endVal - (startCurrencies[k] or endVal)
+                        if diff > 0 then
+                            table.insert(rewards, {
+                                name = k,
+                                amount = diff,
+                                category = "currency",
+                                rarity = "common"
+                            })
+                        end
                     end
                 end
 
-                -- Scan ResultsUI labels for extra item drops
+                -- Scan ResultsUI labels for Win/Lose and LevelName
                 local resultStatus = "Win"
                 for _, obj in ipairs(resultsUI:GetDescendants()) do
                     if obj:IsA("TextLabel") and obj.Visible and #obj.Text > 0 then
                         local txt = obj.Text
-                        if txt:lower():find("defeat") or txt:lower():find("lose") then
+                        local low = txt:lower()
+                        if low:find("defeat") or low:find("lose") then
                             resultStatus = "Lose"
+                        elseif obj.Name == "LevelName" or obj.Name == "MapName" then
+                            mapName = txt
                         end
                     end
                 end
@@ -162,13 +179,15 @@ task.spawn(function()
                     result = resultStatus,
                     duration_sec = duration,
                     rewards = rewards,
-                    currencies = endCurrencies
+                    currencies = endReady and endCurrencies or nil
                 })
             elseif resultsUI and not resultsUI.Enabled and sentForCurrentMatch then
                 -- Reset for next round (e.g. Replay pressed)
                 sentForCurrentMatch = false
                 matchStartTime = os.time()
-                startCurrencies = readCurrencies()
+                local cur, ready = readCurrencies()
+                startCurrencies = cur
+                statsReady = ready
             end
         end)
         task.wait(2)
