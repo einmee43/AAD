@@ -164,21 +164,28 @@ local function readUsefulItems()
         end
     end)
 
-    -- Also scan PlayerGui.items / DungeonInventoryUI slots if populated
+    -- Only scan PlayerGui.items when the player actually has the Items window open (prevents reading hidden templates)
     pcall(function()
         local pg = LocalPlayer:FindFirstChild("PlayerGui")
         local itemsGui = pg and pg:FindFirstChild("items")
-        if itemsGui then
-            for _, frame in ipairs(itemsGui:GetDescendants()) do
-                if frame:IsA("Frame") or frame:IsA("ImageButton") then
-                    local nameLbl = frame:FindFirstChild("name") or frame:FindFirstChild("Title")
-                    local qtyLbl = frame:FindFirstChild("Quantity") or frame:FindFirstChild("Amount") or frame:FindFirstChild("RewardQuantity")
-                    if nameLbl and nameLbl:IsA("TextLabel") and #nameLbl.Text > 0 then
-                        local q = 1
-                        if qtyLbl and qtyLbl:IsA("TextLabel") then
-                            q = tonumber((qtyLbl.Text:gsub("[^%d]", ""))) or 1
+        if itemsGui and itemsGui.Enabled then
+            local grid = itemsGui:FindFirstChild("grid")
+            local list = grid and grid:FindFirstChild("List")
+            if list then
+                for _, frame in ipairs(list:GetDescendants()) do
+                    if frame:IsA("Frame") or frame:IsA("ImageButton") then
+                        local nameLbl = frame:FindFirstChild("name") or frame:FindFirstChild("Title")
+                        local qtyLbl = frame:FindFirstChild("Quantity") or frame:FindFirstChild("Amount")
+                        if nameLbl and nameLbl:IsA("TextLabel") and nameLbl.Visible and #nameLbl.Text > 0 then
+                            local lowN = nameLbl.Text:lower()
+                            if lowN ~= "portals" and not lowN:find("gift") then
+                                local q = 1
+                                if qtyLbl and qtyLbl:IsA("TextLabel") then
+                                    q = tonumber((qtyLbl.Text:gsub("[^%d]", ""))) or 1
+                                end
+                                addItem(nameLbl.Text, q)
+                            end
                         end
-                        addItem(nameLbl.Text, q)
                     end
                 end
             end

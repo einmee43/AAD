@@ -162,7 +162,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [keys, setKeys] = useState<ApiKeyRow[]>([]);
   const [avatarCache, setAvatarCache] = useState<Record<number, string>>({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   // Filters
   const [rarityFilter, setRarityFilter] = useState<'ALL' | 'Secret' | 'Mythic' | 'Legendary'>('ALL');
@@ -176,20 +176,24 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [keyError, setKeyError] = useState<string | null>(null);
 
+  const loadDashboard = useCallback(async () => {
+    const res = await fetch(`/api/dashboard?hours=${hours}`);
+    if (res.ok) {
+      const data = await res.json();
+      setAccounts(data.accounts || []);
+      setLogs(data.run_logs || []);
+      setSnapshots(data.snapshots || []);
+    }
+  }, [hours]);
+
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/dashboard?hours=${hours}`);
-      if (res.ok) {
-        const data = await res.json();
-        setAccounts(data.accounts || []);
-        setLogs(data.run_logs || []);
-        setSnapshots(data.snapshots || []);
-      }
+      await loadDashboard();
     } finally {
       setLoading(false);
     }
-  }, [hours]);
+  }, [loadDashboard]);
 
   const fetchKeys = useCallback(async () => {
     const res = await fetch('/api/keys');
@@ -200,11 +204,33 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   }, []);
 
   useEffect(() => {
-    fetchDashboard();
-    fetchKeys();
-    const timer = setInterval(fetchDashboard, 15000);
-    return () => clearInterval(timer);
-  }, [fetchDashboard, fetchKeys]);
+    let cancelled = false;
+    const runFetch = async () => {
+      const [dashRes, keysRes] = await Promise.all([
+        fetch(`/api/dashboard?hours=${hours}`),
+        fetch('/api/keys'),
+      ]);
+      if (cancelled) return;
+      if (dashRes.ok) {
+        const data = await dashRes.json();
+        setAccounts(data.accounts || []);
+        setLogs(data.run_logs || []);
+        setSnapshots(data.snapshots || []);
+      }
+      if (keysRes.ok) {
+        const kData = await keysRes.json();
+        setKeys(kData.keys || []);
+      }
+    };
+    void runFetch();
+    const timer = setInterval(() => {
+      void loadDashboard();
+    }, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [hours, loadDashboard]);
 
   // Keep selectedIdx valid
   const activeAccount = accounts[selectedIdx] || accounts[0] || null;
@@ -286,15 +312,12 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
       : 0;
 
   // Filtered inventory items for active bot
-  const activeItems = useMemo(() => {
-    const list = activeSnap?.items || [];
-    return list.filter((it) => {
-      const style = getRarityStyle(it.rarity, it.name);
-      if (rarityFilter !== 'ALL' && style.label !== rarityFilter) return false;
-      if (search.trim() && !it.name.toLowerCase().includes(search.toLowerCase())) return false;
-      return true;
-    });
-  }, [activeSnap?.items, rarityFilter, search]);
+  const activeItems = (activeSnap?.items || []).filter((it) => {
+    const style = getRarityStyle(it.rarity, it.name);
+    if (rarityFilter !== 'ALL' && style.label !== rarityFilter) return false;
+    if (search.trim() && !it.name.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
 
   // Filtered logs
   const filteredLogs = useMemo(() => {
@@ -389,13 +412,13 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                   className="w-7 h-7 rounded-full border border-red-400/50"
                 />
               )}
-              <span className="text-xs font-medium hidden md:inline text-purple-100">
+              <span className="text-xs font-medium hidden md:inline text-red-100">
                 {user.name}
               </span>
               <button
                 onClick={handleSignOut}
                 title="Sign out"
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-purple-500/20 transition cursor-pointer"
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-red-500/20 transition cursor-pointer"
               >
                 <LogOut className="w-4 h-4" />
               </button>
@@ -408,8 +431,8 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
         {tab === 'profile' && (
           <>
             {accounts.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-purple-500/30 bg-[#120e24]/60 p-10 text-center space-y-3">
-                <Bot className="w-10 h-10 text-purple-400 mx-auto" />
+              <div className="rounded-2xl border border-dashed border-red-500/30 bg-[#13080b]/60 p-10 text-center space-y-3">
+                <Bot className="w-10 h-10 text-red-400 mx-auto" />
                 <h2 className="text-base font-semibold">ยังไม่มีบอทเชื่อมต่อเข้ามา</h2>
                 <p className="text-xs text-zinc-400 max-w-md mx-auto">
                   ไปที่แท็บ <strong>API Keys</strong> เพื่อคัดลอกโค้ด 6 บรรทัดไปรันใน MuMu แล้วการ์ดโปรไฟล์ตัวละครจะเด้งขึ้นมาอัตโนมัติครับ
@@ -432,13 +455,13 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                         {isKage ? (
                           <Flame className="w-4 h-4 text-red-400" />
                         ) : (
-                          <Sparkles className="w-4 h-4 text-purple-400" />
+                          <Sparkles className="w-4 h-4 text-red-400" />
                         )}
                         {activeAccount.bot_name}
                       </div>
                       <div
                         className={`text-[11px] ${
-                          isKage ? 'text-red-300/60' : 'text-purple-300/60'
+                          isKage ? 'text-red-300/60' : 'text-red-300/60'
                         }`}
                       >
                         {activeAccount.roblox_username || 'Roblox Player'}
@@ -528,7 +551,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                     <div className="flex justify-between text-[11px]">
                       <span className="text-zinc-400">XP Progress</span>
                       <span
-                        className={`font-semibold ${isKage ? 'text-red-300' : 'text-purple-300'}`}
+                        className={`font-semibold ${isKage ? 'text-red-300' : 'text-red-300'}`}
                       >
                         {level > 0 ? `${xpPct}%` : activeAccount.current_wave || 'Ready'}
                       </span>
@@ -537,7 +560,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                       className={`h-2 rounded-full border overflow-hidden ${
                         isKage
                           ? 'bg-[#0c0608] border-red-500/25'
-                          : 'bg-[#090714] border-purple-500/25'
+                          : 'bg-[#090506] border-red-500/25'
                       }`}
                     >
                       <div
@@ -772,20 +795,20 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                   )}
 
                   {/* Quick Recent Runs Preview */}
-                  <div className="rounded-2xl border border-purple-500/25 bg-[#120e24]/80 overflow-hidden">
-                    <div className="px-4 py-3 border-b border-purple-500/20 flex items-center justify-between">
-                      <h2 className="text-xs font-bold uppercase tracking-wider text-purple-200 flex items-center gap-2">
-                        <Activity className="w-4 h-4 text-purple-400" />
+                  <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/80 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-red-500/20 flex items-center justify-between">
+                      <h2 className="text-xs font-bold uppercase tracking-wider text-red-200 flex items-center gap-2">
+                        <Activity className="w-4 h-4 text-red-400" />
                         รอบล่าสุด ({logs.slice(0, 5).length})
                       </h2>
                       <button
                         onClick={() => setTab('history')}
-                        className="text-xs text-purple-300 hover:text-white cursor-pointer"
+                        className="text-xs text-red-300 hover:text-white cursor-pointer"
                       >
                         ดูทั้งหมด →
                       </button>
                     </div>
-                    <div className="divide-y divide-purple-500/10">
+                    <div className="divide-y divide-red-500/10">
                       {logs.slice(0, 5).map((log) => (
                         <div
                           key={log.id}
@@ -864,7 +887,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
 
             {/* KPI Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-              <div className="rounded-2xl border border-purple-500/25 bg-[#120e24]/85 p-4">
+              <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
                 <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
                   <span>บอทออนไลน์</span>
                   <Bot className="w-4 h-4 text-emerald-400" />
@@ -875,7 +898,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-purple-500/25 bg-[#120e24]/85 p-4">
+              <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
                 <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
                   <span>จำนวนรอบ &amp; Winrate</span>
                   <Trophy className="w-4 h-4 text-amber-400" />
@@ -888,7 +911,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-purple-500/25 bg-[#120e24]/85 p-4">
+              <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
                 <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
                   <span>เวลาเฉลี่ยต่อรอบ</span>
                   <Clock className="w-4 h-4 text-sky-400" />
@@ -896,10 +919,10 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                 <div className="text-2xl font-bold">{formatDuration(analytics.avgSec)}</div>
               </div>
 
-              <div className="rounded-2xl border border-purple-500/25 bg-[#120e24]/85 p-4">
+              <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
                 <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
                   <span>Gems / ชั่วโมง</span>
-                  <TrendingUp className="w-4 h-4 text-purple-400" />
+                  <TrendingUp className="w-4 h-4 text-red-400" />
                 </div>
                 <div className="text-2xl font-bold">{analytics.gemsPerHr.toLocaleString()}</div>
               </div>
@@ -907,8 +930,8 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
 
             {/* Total Loot Summary */}
             {Object.keys(analytics.lootTotals).length > 0 && (
-              <section className="rounded-2xl border border-purple-500/25 bg-[#120e24]/85 p-4">
-                <h2 className="text-xs font-semibold uppercase tracking-wider text-purple-300 mb-3">
+              <section className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-red-300 mb-3">
                   ยอดรวมที่ได้ในช่วงเวลานี้
                 </h2>
                 <div className="flex flex-wrap gap-2">
@@ -936,8 +959,8 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
             )}
 
             {/* Run History Table */}
-            <section className="rounded-2xl border border-purple-500/25 bg-[#120e24]/85 overflow-hidden">
-              <div className="p-4 border-b border-purple-500/20 flex flex-wrap items-center justify-between gap-3">
+            <section className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 overflow-hidden">
+              <div className="p-4 border-b border-red-500/20 flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-sm font-semibold">ตารางประวัติดรอปทุกรอบ</h2>
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="relative">
@@ -946,13 +969,13 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                       placeholder="ค้นหาด่าน / ไอเทม..."
-                      className="pl-8 pr-3 py-1.5 text-xs rounded-xl bg-[#090714] border border-purple-500/25 focus:outline-none focus:border-purple-400"
+                      className="pl-8 pr-3 py-1.5 text-xs rounded-xl bg-[#090506] border border-red-500/25 focus:outline-none focus:border-red-400"
                     />
                   </div>
                   <select
                     value={botFilter}
                     onChange={(e) => setBotFilter(e.target.value)}
-                    className="px-2.5 py-1.5 text-xs rounded-xl bg-[#090714] border border-purple-500/25"
+                    className="px-2.5 py-1.5 text-xs rounded-xl bg-[#090506] border border-red-500/25"
                   >
                     <option value="ALL">ทุกบอท</option>
                     {accounts.map((a) => (
@@ -964,7 +987,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                   <select
                     value={resultFilter}
                     onChange={(e) => setResultFilter(e.target.value)}
-                    className="px-2.5 py-1.5 text-xs rounded-xl bg-[#090714] border border-purple-500/25"
+                    className="px-2.5 py-1.5 text-xs rounded-xl bg-[#090506] border border-red-500/25"
                   >
                     <option value="ALL">Win &amp; Lose</option>
                     <option value="Win">Win</option>
@@ -975,7 +998,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
 
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-[#0b0818] text-purple-300/70 border-b border-purple-500/20">
+                  <thead className="bg-[#0e0608] text-red-300/70 border-b border-red-500/20">
                     <tr>
                       <th className="px-4 py-3 font-medium">เวลา</th>
                       <th className="px-4 py-3 font-medium">บอท</th>
@@ -985,7 +1008,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                       <th className="px-4 py-3 font-medium">ของที่ได้</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-purple-500/10">
+                  <tbody className="divide-y divide-red-500/10">
                     {filteredLogs.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
@@ -994,7 +1017,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                       </tr>
                     ) : (
                       filteredLogs.map((log) => (
-                        <tr key={log.id} className="hover:bg-purple-500/5">
+                        <tr key={log.id} className="hover:bg-red-500/5">
                           <td className="px-4 py-3 text-zinc-400 whitespace-nowrap">
                             {timeAgo(log.created_at)}
                           </td>
@@ -1053,7 +1076,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
 
         {tab === 'keys' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <section className="rounded-2xl border border-purple-500/25 bg-[#120e24]/85 p-5 space-y-5">
+            <section className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-5 space-y-5">
               <div>
                 <h2 className="text-base font-semibold">Generate New API Key</h2>
                 <p className="text-xs text-zinc-400 mt-1">
@@ -1068,7 +1091,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                     value={newLabel}
                     onChange={(e) => setNewLabel(e.target.value)}
                     placeholder="e.g. MuMu Farm"
-                    className="w-full px-3 py-2 text-sm rounded-xl bg-[#090714] border border-purple-500/25 focus:outline-none focus:border-purple-400"
+                    className="w-full px-3 py-2 text-sm rounded-xl bg-[#090506] border border-red-500/25 focus:outline-none focus:border-red-400"
                     required
                   />
                 </div>
@@ -1080,7 +1103,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                     value={newWebhook}
                     onChange={(e) => setNewWebhook(e.target.value)}
                     placeholder="https://discord.com/api/webhooks/..."
-                    className="w-full px-3 py-2 text-sm rounded-xl bg-[#090714] border border-purple-500/25 focus:outline-none focus:border-purple-400"
+                    className="w-full px-3 py-2 text-sm rounded-xl bg-[#090506] border border-red-500/25 focus:outline-none focus:border-red-400"
                   />
                 </div>
                 <button
@@ -1098,17 +1121,17 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
               </form>
 
               <div className="space-y-2.5 pt-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-purple-300/70">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-red-300/70">
                   Keys ของคุณ ({keys.length})
                 </h3>
                 {keys.map((k) => (
                   <div
                     key={k.id}
-                    className="rounded-xl border border-purple-500/20 bg-[#090714]/80 p-3 flex items-center justify-between gap-3"
+                    className="rounded-xl border border-red-500/20 bg-[#090506]/80 p-3 flex items-center justify-between gap-3"
                   >
                     <div className="min-w-0">
                       <div className="text-xs font-semibold">{k.label}</div>
-                      <div className="text-xs font-mono text-purple-300 truncate">{k.api_key}</div>
+                      <div className="text-xs font-mono text-red-300 truncate">{k.api_key}</div>
                       <div className="text-[11px] text-zinc-500 mt-0.5">
                         ใช้งานล่าสุด: {k.last_used_at ? timeAgo(k.last_used_at) : 'ยังไม่เคยใช้'}
                         {k.discord_webhook_url ? ' • Discord Alert ON' : ''}
@@ -1117,7 +1140,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         onClick={() => copyText(k.id, k.api_key)}
-                        className="p-2 rounded-lg bg-[#15102b] hover:bg-purple-500/20 text-zinc-300 cursor-pointer"
+                        className="p-2 rounded-lg bg-[#1a0b0f] hover:bg-red-500/20 text-zinc-300 cursor-pointer"
                         title="Copy API Key"
                       >
                         {copiedId === k.id ? (
@@ -1128,7 +1151,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                       </button>
                       <button
                         onClick={() => handleDeleteKey(k.id)}
-                        className="p-2 rounded-lg bg-[#15102b] hover:bg-rose-500/20 text-zinc-400 hover:text-rose-400 cursor-pointer"
+                        className="p-2 rounded-lg bg-[#1a0b0f] hover:bg-rose-500/20 text-zinc-400 hover:text-rose-400 cursor-pointer"
                         title="Delete Key"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -1139,12 +1162,12 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
               </div>
             </section>
 
-            <section className="rounded-2xl border border-purple-500/25 bg-[#120e24]/85 p-5 space-y-4">
+            <section className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-5 space-y-4">
               <h2 className="text-base font-semibold">โค้ดสำหรับรันใน MuMu (6 บรรทัด)</h2>
               <p className="text-xs text-zinc-400">
                 ก๊อปโค้ดนี้ไปรันใน Executor หรือวางในโฟลเดอร์ <code>autoexec</code> ได้เลย:
               </p>
-              <pre className="rounded-xl bg-[#090714] border border-purple-500/25 p-4 text-xs font-mono text-emerald-300 overflow-x-auto">
+              <pre className="rounded-xl bg-[#090506] border border-red-500/25 p-4 text-xs font-mono text-emerald-300 overflow-x-auto">
 {`getgenv().AA_TRACKER_CONFIG = {
     API_URL  = "${originUrl}/api/ingest",
     API_KEY  = "${keys[0]?.api_key || 'PASTE_YOUR_API_KEY_HERE'}",
