@@ -610,12 +610,16 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   const isKage = true;
 
   return (
-    <div className="min-h-screen bg-[#070506] text-zinc-100 relative overflow-x-hidden">
+    <div
+      className={`bg-[#070506] text-zinc-100 relative overflow-x-hidden flex flex-col ${
+        tab === 'profile' ? 'min-h-screen lg:h-screen lg:overflow-hidden' : 'min-h-screen'
+      }`}
+    >
       {/* Kage Three.js + Blurred Artwork Backdrop */}
       <KageBackdrop />
 
       {/* Top Navbar */}
-      <header className="sticky top-0 z-20 border-b border-red-500/25 bg-[#0c0709]/85 backdrop-blur-xl">
+      <header className="sticky top-0 z-20 shrink-0 border-b border-red-500/25 bg-[#0c0709]/85 backdrop-blur-xl">
         <div className="max-w-[1520px] mx-auto px-4 sm:px-8 h-16 flex items-center justify-between gap-3">
           <NextyLogo size="sm" />
 
@@ -734,7 +738,11 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
         </div>
       </header>
 
-      <main className="relative z-10 max-w-[1520px] mx-auto px-4 sm:px-8 py-6 space-y-6">
+      <main
+        className={`relative z-10 w-full max-w-[1520px] mx-auto px-4 sm:px-8 py-5 ${
+          tab === 'profile' ? 'lg:flex-1 lg:min-h-0 lg:overflow-hidden flex flex-col' : 'space-y-6'
+        }`}
+      >
         {tab === 'profile' && (
           <>
             {accounts.length === 0 ? (
@@ -746,10 +754,13 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                 </p>
               </div>
             ) : (
-              <div key={activeAccount.id} className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start animate-fade-slide">
-                {/* LEFT COLUMN: Profile Card */}
+              <div
+                key={activeAccount.id}
+                className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:flex-1 lg:min-h-0 items-stretch animate-fade-slide"
+              >
+                {/* LEFT COLUMN: Locked Profile Card */}
                 <section
-                  className={`lg:col-span-4 rounded-2xl border p-5 relative overflow-hidden transition-all duration-300 ${
+                  className={`lg:col-span-4 rounded-2xl border p-5 relative overflow-y-auto kage-scroll transition-all duration-300 ${
                     isKage
                       ? 'border-red-500/35 bg-gradient-to-b from-[#1a0b0f]/92 via-[#11080a]/92 to-[#0b0607]/95 shadow-[0_0_40px_rgba(220,38,38,0.16)]'
                       : 'border-purple-500/35 bg-gradient-to-b from-[#171130]/95 via-[#110c24]/95 to-[#0d091c]/95 shadow-[0_0_40px_rgba(139,92,246,0.15)]'
@@ -958,10 +969,10 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                   </div>
                 </section>
 
-                {/* RIGHT COLUMN: Live KPIs + Inventory Grid + Recent Runs */}
-                <section className="lg:col-span-8 space-y-5">
+                {/* RIGHT COLUMN: Fixed Header/Filters + Scrollable Inventory Grid */}
+                <section className="lg:col-span-8 lg:h-full lg:min-h-0 flex flex-col gap-4">
                   {/* Live Match & 6-Unit Team Banner */}
-                  <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+                  <div className="shrink-0 rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
                     <div className="min-w-0 space-y-1">
                       <div className="flex items-center gap-2 text-xs">
                         <span
@@ -1080,7 +1091,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                   </div>
 
                   {/* Live KPI Strip */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="shrink-0 grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
                       <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
                         <span>บอทออนไลน์</span>
@@ -1124,7 +1135,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                   </div>
 
                   {/* Inventory Category Tabs, Rarity & Portal Tier Filters */}
-                  <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3 space-y-3">
+                  <div className="shrink-0 rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="หมวดคลัง">
                         {(
@@ -1214,7 +1225,8 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                     )}
                   </div>
 
-                  {/* Inventory / Team Grid */}
+                  {/* Scrollable Inventory / Team / Recent Runs Area */}
+                  <div className="lg:flex-1 lg:min-h-0 lg:overflow-y-auto kage-scroll pr-1 space-y-4 pb-2">
                   {inventoryTab === 'team' ? (
                     activeTeam.length > 0 ? (
                       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
@@ -1424,6 +1436,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                         </div>
                       )}
                     </div>
+                  </div>
                   </div>
                 </section>
               </div>
