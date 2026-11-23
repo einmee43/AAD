@@ -10,7 +10,7 @@ export async function GET(request: Request) {
 
   try {
     const res = await fetch(
-      `https://thumbnails.roblox.com/v1/users/avatar?userIds=${userId}&size=420x420&format=Png&isCircular=false`,
+      `https://thumbnails.roblox.com/v1/users/avatar?userIds=${userId}&size=720x720&format=Png&isCircular=false`,
       { next: { revalidate: 3600 } }
     );
     if (!res.ok) {
