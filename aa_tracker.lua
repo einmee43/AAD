@@ -260,6 +260,22 @@ end
 local function readEquippedTeam()
     local team = {}
     pcall(function()
+        local traitByImage = {}
+        pcall(function()
+            local rs = game:GetService("ReplicatedStorage")
+            local pkg = rs:FindFirstChild("packages")
+            local assets = pkg and pkg:FindFirstChild("assets")
+            local gui = assets and assets:FindFirstChild("gui")
+            local traitIcons = gui and gui:FindFirstChild("TraitIcons")
+            if traitIcons then
+                for _, child in ipairs(traitIcons:GetChildren()) do
+                    if child:IsA("ImageLabel") and #child.Image > 0 then
+                        traitByImage[child.Image] = child.Name:lower()
+                    end
+                end
+            end
+        end)
+
         local pg = LocalPlayer:FindFirstChild("PlayerGui")
         local su = pg and pg:FindFirstChild("spawn_units")
         local lives = su and su:FindFirstChild("Lives")
@@ -282,11 +298,21 @@ local function readEquippedTeam()
                     end
                     local costLbl = slotObj:FindFirstChild("text", true) or slotObj:FindFirstChild("cost", true)
                     local costVal = (costLbl and costLbl:IsA("TextLabel") and costLbl.Text ~= "9999") and tonumber((costLbl.Text:gsub("[^%d]", ""))) or nil
+                    local traitName = slotObj:GetAttribute("Trait")
+                    if not traitName then
+                        for _, desc in ipairs(slotObj:GetDescendants()) do
+                            if desc:IsA("ImageLabel") and desc.Visible and traitByImage[desc.Image] then
+                                traitName = traitByImage[desc.Image]
+                                break
+                            end
+                        end
+                    end
                     table.insert(team, {
                         slot = slot,
                         name = unitName,
                         level = lvl,
                         cost = costVal,
+                        trait = traitName and tostring(traitName):lower() or nil,
                     })
                 end
             end

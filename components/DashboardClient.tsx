@@ -66,6 +66,28 @@ interface TeamUnit {
   name: string;
   level?: number | null;
   cost?: number | null;
+  trait?: string | null;
+}
+
+const KNOWN_TRAITS = new Set([
+  'vigorous',
+  'range',
+  'swift',
+  'adept',
+  'culling',
+  'sniper',
+  'godspeed',
+  'reaper',
+  'celestial',
+  'divine',
+  'golden',
+  'unique',
+]);
+
+function getTraitIcon(trait?: string | null): string | null {
+  const t = (trait || '').trim().toLowerCase();
+  if (KNOWN_TRAITS.has(t)) return `/traits/${t}.png`;
+  return null;
 }
 
 interface RunLog {
@@ -923,10 +945,17 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                         {[1, 2, 3, 4, 5, 6].map((slotNum) => {
                           const unit = activeTeam.find((u) => u.slot === slotNum);
                           const unitImg = unit ? unitIconCache[unit.name] : '';
+                          const traitImg = unit ? getTraitIcon(unit.trait) : null;
                           return (
                             <div
                               key={slotNum}
-                              title={unit ? `${unit.name}${unit.level ? ` (Lv.${unit.level})` : ''}` : `ช่องที่ ${slotNum} ว่าง`}
+                              title={
+                                unit
+                                  ? `${unit.name}${unit.level ? ` (Lv.${unit.level})` : ''}${
+                                      unit.trait ? ` • ${unit.trait}` : ''
+                                    }`
+                                  : `ช่องที่ ${slotNum} ว่าง`
+                              }
                               className={`relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl border overflow-hidden flex items-center justify-center transition-all ${
                                 unit
                                   ? 'border-red-500/45 bg-gradient-to-b from-red-950/60 to-[#0d0507] shadow-[0_0_12px_rgba(220,38,38,0.2)]'
@@ -948,6 +977,13 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                                   <span className="absolute top-1 left-1 text-[9px] font-bold text-zinc-300 leading-none">
                                     #{slotNum}
                                   </span>
+                                  {traitImg && (
+                                    <img
+                                      src={traitImg}
+                                      alt={unit.trait || 'trait'}
+                                      className="absolute top-1 right-1 w-4 h-4 object-contain drop-shadow-[0_0_4px_rgba(0,0,0,0.9)]"
+                                    />
+                                  )}
                                   {unit.level ? (
                                     <span className="absolute bottom-1 inset-x-1 text-center text-[10px] font-bold text-white leading-none drop-shadow">
                                       Lv.{unit.level}
@@ -1126,7 +1162,14 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                                 ช่อง #{unit.slot}
                               </span>
                               {unit.level ? (
-                                <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-red-500/20 border border-red-400/40 text-red-200">
+                                <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-red-500/20 border border-red-400/40 text-red-200 inline-flex items-center gap-1">
+                                  {getTraitIcon(unit.trait) && (
+                                    <img
+                                      src={getTraitIcon(unit.trait)!}
+                                      alt={unit.trait || 'trait'}
+                                      className="w-3.5 h-3.5 object-contain"
+                                    />
+                                  )}
                                   Lv.{unit.level}
                                 </span>
                               ) : null}
