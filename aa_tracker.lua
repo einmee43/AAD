@@ -104,8 +104,6 @@ local function readCurrencies()
                         if num then
                             currencies["Dawn Coins"] = num
                         end
-                    elseif game.PlaceId == 8304191830 then
-                        currencies["Dawn Coins"] = 0
                     end
                 end)
             end
@@ -345,6 +343,12 @@ task.spawn(function()
             statsReady = true
         end
         if ready then
+            local usefulItems = readUsefulItems()
+            for _, it in ipairs(usefulItems) do
+                if it.name and it.name:lower():find("dawn coin") then
+                    cur["Dawn Coins"] = it.amount
+                end
+            end
             postIngest({
                 event_type = "heartbeat",
                 status = status,
@@ -352,7 +356,7 @@ task.spawn(function()
                 current_map = mapName,
                 current_wave = waveStr,
                 currencies = cur,
-                items = readUsefulItems(),
+                items = usefulItems,
                 team = readEquippedTeam()
             })
         end
