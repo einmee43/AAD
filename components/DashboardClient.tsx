@@ -141,7 +141,6 @@ function getRarityStyle(rarity?: string, name?: string) {
 }
 
 export default function DashboardClient({ user }: { user: UserInfo }) {
-  const [theme, setTheme] = useState<'cyber' | 'kage'>('cyber');
   const [tab, setTab] = useState<'profile' | 'history' | 'keys'>('profile');
   const [hours, setHours] = useState(24);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -186,17 +185,6 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
       setKeys(data.keys || []);
     }
   }, []);
-
-  useEffect(() => {
-    const saved = localStorage.getItem('aa_theme');
-    if (saved === 'kage' || saved === 'cyber') setTheme(saved);
-  }, []);
-
-  const toggleTheme = () => {
-    const next = theme === 'cyber' ? 'kage' : 'cyber';
-    setTheme(next);
-    localStorage.setItem('aa_theme', next);
-  };
 
   useEffect(() => {
     fetchDashboard();
@@ -335,87 +323,32 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   const originUrl =
     typeof window !== 'undefined' ? window.location.origin : 'https://aad-hazel.vercel.app';
 
-  const isKage = theme === 'kage';
+  const isKage = true;
 
   return (
-    <div
-      className={`min-h-screen text-zinc-100 relative overflow-x-hidden transition-colors duration-500 ${
-        isKage ? 'bg-[#070506]' : 'bg-[#090714]'
-      }`}
-    >
-      {/* Dynamic Theme Backdrop */}
-      {isKage ? (
-        <KageBackdrop />
-      ) : (
-        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_top_left,_rgba(139,92,246,0.18),_transparent_50%),radial-gradient(ellipse_at_bottom_right,_rgba(99,102,241,0.14),_transparent_50%)]" />
-      )}
+    <div className="min-h-screen bg-[#070506] text-zinc-100 relative overflow-x-hidden">
+      {/* Kage Three.js + Blurred Artwork Backdrop */}
+      <KageBackdrop />
 
       {/* Top Navbar */}
-      <header
-        className={`sticky top-0 z-20 border-b backdrop-blur-xl ${
-          isKage
-            ? 'border-red-500/25 bg-[#0c0709]/85'
-            : 'border-purple-500/20 bg-[#0d0a1c]/85'
-        }`}
-      >
+      <header className="sticky top-0 z-20 border-b border-red-500/25 bg-[#0c0709]/85 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div
-              className={`h-9 w-9 rounded-xl border flex items-center justify-center ${
-                isKage
-                  ? 'bg-red-600/20 border-red-500/45 text-red-400 shadow-[0_0_15px_rgba(220,38,38,0.35)]'
-                  : 'bg-purple-600/25 border-purple-400/40 text-purple-300 shadow-[0_0_15px_rgba(168,85,247,0.3)]'
-              }`}
-            >
-              {isKage ? <Flame className="w-5 h-5" /> : <Sparkles className="w-5 h-5" />}
+            <div className="h-9 w-9 rounded-xl border bg-red-600/20 border-red-500/45 text-red-400 shadow-[0_0_15px_rgba(220,38,38,0.35)] flex items-center justify-center">
+              <Flame className="w-5 h-5" />
             </div>
             <div>
-              <h1
-                className={`font-bold text-sm sm:text-base tracking-wide bg-gradient-to-r bg-clip-text text-transparent ${
-                  isKage ? 'from-white to-red-400' : 'from-white to-purple-300'
-                }`}
-              >
-                {isKage ? 'KAGE // AA TRACKER' : 'AA DROP TRACKER'}
+              <h1 className="font-bold text-sm sm:text-base tracking-wide bg-gradient-to-r from-white to-red-400 bg-clip-text text-transparent">
+                AA DROP TRACKER
               </h1>
-              <p
-                className={`text-[11px] hidden sm:block ${
-                  isKage ? 'text-red-300/60' : 'text-purple-300/60'
-                }`}
-              >
+              <p className="text-[11px] hidden sm:block text-red-300/60">
                 Anime Adventures Command Center
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Theme Switcher Pill */}
-            <button
-              onClick={toggleTheme}
-              title="สลับธีมเว็บ"
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-medium transition cursor-pointer ${
-                isKage
-                  ? 'bg-red-950/50 border-red-500/40 text-red-200 hover:bg-red-900/50'
-                  : 'bg-[#15102b] border-purple-500/30 text-purple-200 hover:border-purple-400/60'
-              }`}
-            >
-              {isKage ? (
-                <>
-                  <Flame className="w-3.5 h-3.5 text-red-400" />
-                  <span className="hidden md:inline">Kage</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                  <span className="hidden md:inline">Cyber</span>
-                </>
-              )}
-            </button>
-
-            <div
-              className={`flex rounded-xl border p-1 text-xs ${
-                isKage ? 'bg-[#160b0e] border-red-500/25' : 'bg-[#15102b] border-purple-500/25'
-              }`}
-            >
+            <div className="flex rounded-xl border p-1 text-xs bg-[#160b0e] border-red-500/25">
               <button
                 onClick={() => setTab('profile')}
                 className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer ${
