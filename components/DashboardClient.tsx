@@ -98,6 +98,7 @@ function timeAgo(iso: string) {
 
 function getItemIcon(name: string): string | null {
   const n = name.toLowerCase();
+  if (n.includes('dawn')) return '/icons/dawn_coin.jpg';
   if (n.includes('gem')) return '/icons/gems.png';
   if (n.includes('gold') || n.includes('coin') || n.includes('yen')) return '/icons/gold.png';
   if (n.includes('pearl')) return '/icons/pearls.png';
@@ -257,7 +258,13 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   const activeCurrencies = activeSnap?.currencies || {};
   const level = activeCurrencies['_level'] || 0;
   const xp = activeCurrencies['_xp'] || 0;
-  const xpPct = level > 0 ? Math.min(100, Math.round((xp / Math.max(100, level * 15)) * 100)) : 0;
+  const maxXp = activeCurrencies['_max_xp'] || 0;
+  const xpPct =
+    level > 0 && maxXp > 0
+      ? Math.min(100, Math.round((xp / maxXp) * 1000) / 10)
+      : level > 0
+      ? 100
+      : 0;
 
   // Filtered inventory items for active bot
   const activeItems = useMemo(() => {
@@ -516,11 +523,15 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                         {activeAccount.current_mode || 'Lobby'}{' '}
                         {activeAccount.current_map ? `• ${activeAccount.current_map}` : ''}
                       </span>
-                      {xp > 0 && <span>{xp.toLocaleString()} XP</span>}
+                      {maxXp > 0 && (
+                        <span>
+                          {xp.toLocaleString()} / {maxXp.toLocaleString()} XP
+                        </span>
+                      )}
                     </div>
                   </div>
 
-                  {/* 2x2 Currency & Stats Grid */}
+                  {/* Currency & Stats Grid */}
                   <div className="grid grid-cols-2 gap-2.5 mb-4">
                     <div className="rounded-xl border border-purple-500/25 bg-[#0e0a1e]/90 p-3 flex items-center gap-2.5">
                       <img src="/icons/gems.png" alt="Gems" className="w-8 h-8 object-contain shrink-0" />
@@ -556,14 +567,36 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-purple-500/25 bg-[#0e0a1e]/90 p-3 flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-300 shrink-0">
-                        <Clock className="w-4 h-4" />
-                      </div>
+                    <div className="rounded-xl border border-amber-500/30 bg-[#140e1a]/90 p-3 flex items-center gap-2.5">
+                      <img
+                        src="/icons/dawn_coin.jpg"
+                        alt="Dawn Coins"
+                        className="w-8 h-8 rounded-full object-cover shrink-0"
+                      />
                       <div className="min-w-0">
-                        <div className="text-[10px] text-zinc-400">เวลาแมตช์รวม</div>
-                        <div className="text-sm font-bold text-white truncate">
-                          {formatDuration(analytics.totalSec)}
+                        <div className="text-[10px] text-amber-300/80">Dawn Coins</div>
+                        <div className="text-sm font-bold text-amber-300 truncate">
+                          {Number(activeCurrencies['Dawn Coins'] || 0).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="col-span-2 rounded-xl border border-purple-500/25 bg-[#0e0a1e]/90 p-3 flex items-center justify-between gap-2.5">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-300 shrink-0">
+                          <Clock className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-zinc-400">เวลาแมตช์ที่บันทึก</div>
+                          <div className="text-sm font-bold text-white">
+                            {formatDuration(analytics.totalSec)}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[10px] text-zinc-400">Winrate</div>
+                        <div className="text-xs font-bold text-emerald-400">
+                          {analytics.winrate}% ({analytics.totalRuns} รอบ)
                         </div>
                       </div>
                     </div>

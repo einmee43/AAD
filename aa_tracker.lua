@@ -45,13 +45,14 @@ local function postIngest(payload)
     end)
 end
 
--- Scan ONLY useful player currencies: Gems, Gold, Summer Pearls (+ Level/XP metadata)
+-- Scan ONLY useful player currencies: Gems, Gold, Summer Pearls, Dawn Coins (+ Level/XP metadata)
 -- Returns (currenciesTable, isReadyBool)
 local function readCurrencies()
     local currencies = {
         ["Gems"] = 0,
         ["Gold"] = 0,
         ["Summer Pearls"] = 0,
+        ["Dawn Coins"] = 0,
     }
     local ready = false
     pcall(function()
@@ -60,8 +61,6 @@ local function readCurrencies()
             local gemObj = stats:FindFirstChild("gem_amount")
             local goldObj = stats:FindFirstChild("gold_amount")
             local pearlObj = stats:FindFirstChild("_resourceSummerPearls")
-            local lvlObj = stats:FindFirstChild("player_level") or stats:FindFirstChild("level") or stats:FindFirstChild("Level")
-            local xpObj = stats:FindFirstChild("player_xp") or stats:FindFirstChild("xp") or stats:FindFirstChild("XP")
             if gemObj and gemObj:IsA("ValueBase") then
                 currencies["Gems"] = tonumber(gemObj.Value) or 0
                 ready = true
@@ -74,12 +73,55 @@ local function readCurrencies()
                 currencies["Summer Pearls"] = tonumber(pearlObj.Value) or 0
                 ready = true
             end
-            if lvlObj and lvlObj:IsA("ValueBase") then
-                currencies["_level"] = tonumber(lvlObj.Value) or 1
-            end
-            if xpObj and xpObj:IsA("ValueBase") then
-                currencies["_xp"] = tonumber(xpObj.Value) or 0
-            end
+        end
+
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        if pg then
+            -- Dawn Coins from SummonGUI.Main.TopBar.Currency.ResourceFrame.Level
+            pcall(function()
+                local rf = pg:FindFirstChild("SummonGUI")
+                    and pg.SummonGUI:FindFirstChild("Main")
+                    and pg.SummonGUI.Main:FindFirstChild("TopBar")
+                    and pg.SummonGUI.Main.TopBar:FindFirstChild("Currency")
+                    and pg.SummonGUI.Main.TopBar.Currency:FindFirstChild("ResourceFrame")
+                    and pg.SummonGUI.Main.TopBar.Currency.ResourceFrame:FindFirstChild("Level")
+                if rf and rf:IsA("TextLabel") then
+                    local cleaned = rf.Text:gsub(",", "")
+                    local num = tonumber(cleaned)
+                    if num then
+                        currencies["Dawn Coins"] = num
+                    end
+                end
+            end)
+
+            -- Level & XP from ProfileGUI or spawn_units ("Level 263 [1012/1934]")
+            pcall(function()
+                local lvlText = nil
+                local pGui = pg:FindFirstChild("ProfileGUI")
+                if pGui then
+                    local lbl = pGui:FindFirstChild("Level", true)
+                    if lbl and lbl:IsA("TextLabel") and lbl.Text:find("%[") then
+                        lvlText = lbl.Text
+                    end
+                end
+                if not lvlText then
+                    local su = pg:FindFirstChild("spawn_units")
+                    if su then
+                        local lbl = su:FindFirstChild("Level", true)
+                        if lbl and lbl:IsA("TextLabel") and lbl.Text:find("%[") then
+                            lvlText = lbl.Text
+                        end
+                    end
+                end
+                if lvlText then
+                    local lv, curXp, maxXp = lvlText:match("Level%s+(%d+)%s*%[(%d+)/(%d+)%]")
+                    if lv then
+                        currencies["_level"] = tonumber(lv) or 0
+                        currencies["_xp"] = tonumber(curXp) or 0
+                        currencies["_max_xp"] = tonumber(maxXp) or 100
+                    end
+                end
+            end)
         end
     end)
     return currencies, ready
