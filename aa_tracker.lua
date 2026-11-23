@@ -131,61 +131,54 @@ local function readCurrencies()
     return currencies, ready
 end
 
--- Scan useful inventory items (Portals, Stat Cubes, Rerolls, Star Remnants)
+-- Scan inventory items from PlayerGui.items.grid.List.Outer.ItemFrames (and fallback folders)
 local function readUsefulItems()
     local counts = {}
-    local function addItem(rawName, amt)
-        if not rawName or type(rawName) ~= "string" then return end
-        local low = rawName:lower()
-        local rarity = "Mythic"
-        if low:find("secret") or low:find("explosion") or low:find("demon") then
-            rarity = "Secret"
-        elseif low:find("reroll") or low:find("legendary") then
-            rarity = "Legendary"
-        end
-        if low:find("portal") or low:find("cube") or low:find("remnant") or low:find("reroll") then
-            local key = rawName
-            if not counts[key] then
-                counts[key] = { name = rawName, amount = 0, rarity = rarity }
-            end
-            counts[key].amount = counts[key].amount + (tonumber(amt) or 1)
+    local function inferRarity(rawName, idName)
+        local low = (rawName .. " " .. (idName or "")):lower()
+        if low:find("secret") or low:find("explosion") or low:find("demon") or low:find("perfect") or low:find("conqueror") or low:find("compass") then
+            return "Secret"
+        elseif low:find("portal") or low:find("cube") or low:find("remnant") or low:find("reroll") or low:find("key") or low:find("orb") or low:find("ball") or low:find("staff") or low:find("wings") then
+            return "Mythic"
+        else
+            return "Legendary"
         end
     end
 
-    pcall(function()
-        for _, child in ipairs(LocalPlayer:GetChildren()) do
-            local cname = child.Name:lower()
-            if cname:find("item") or cname:find("invent") or cname:find("bag") then
-                for _, sub in ipairs(child:GetChildren()) do
-                    local qty = sub:IsA("ValueBase") and tonumber(sub.Value) or 1
-                    addItem(sub.Name, qty)
-                end
-            end
+    local function addItem(rawName, amt, idName)
+        if not rawName or type(rawName) ~= "string" then return end
+        local trimmed = rawName:match("^%s*(.-)%s*$")
+        if not trimmed or #trimmed == 0 then return end
+        local low = trimmed:lower()
+        if low == "portals" or low == "item" or low == "items" or low == "item name" or low:find("gift") then
+            return
         end
-    end)
+        local key = trimmed
+        if not counts[key] then
+            counts[key] = { name = trimmed, amount = 0, rarity = inferRarity(trimmed, idName) }
+        end
+        counts[key].amount = counts[key].amount + (tonumber(amt) or 1)
+    end
 
-    -- Only scan PlayerGui.items when the player actually has the Items window open (prevents reading hidden templates)
     pcall(function()
         local pg = LocalPlayer:FindFirstChild("PlayerGui")
         local itemsGui = pg and pg:FindFirstChild("items")
-        if itemsGui and itemsGui.Enabled then
-            local grid = itemsGui:FindFirstChild("grid")
-            local list = grid and grid:FindFirstChild("List")
-            if list then
-                for _, frame in ipairs(list:GetDescendants()) do
-                    if frame:IsA("Frame") or frame:IsA("ImageButton") then
-                        local nameLbl = frame:FindFirstChild("name") or frame:FindFirstChild("Title")
-                        local qtyLbl = frame:FindFirstChild("Quantity") or frame:FindFirstChild("Amount")
-                        if nameLbl and nameLbl:IsA("TextLabel") and nameLbl.Visible and #nameLbl.Text > 0 then
-                            local lowN = nameLbl.Text:lower()
-                            if lowN ~= "portals" and not lowN:find("gift") then
-                                local q = 1
-                                if qtyLbl and qtyLbl:IsA("TextLabel") then
-                                    q = tonumber((qtyLbl.Text:gsub("[^%d]", ""))) or 1
-                                end
-                                addItem(nameLbl.Text, q)
-                            end
+        local grid = itemsGui and itemsGui:FindFirstChild("grid")
+        local list = grid and grid:FindFirstChild("List")
+        local outer = list and list:FindFirstChild("Outer")
+        local itemFrames = outer and outer:FindFirstChild("ItemFrames")
+        if itemFrames then
+            for _, frame in ipairs(itemFrames:GetChildren()) do
+                if frame:IsA("GuiObject") and frame.Visible then
+                    local nameLbl = frame:FindFirstChild("name") or frame:FindFirstChild("Title")
+                    local mainFrame = frame:FindFirstChild("Main")
+                    local qtyLbl = (mainFrame and mainFrame:FindFirstChild("Quantity")) or frame:FindFirstChild("Quantity") or frame:FindFirstChild("Amount")
+                    if nameLbl and nameLbl:IsA("TextLabel") and #nameLbl.Text > 0 then
+                        local q = 1
+                        if qtyLbl and qtyLbl:IsA("TextLabel") then
+                            q = tonumber((qtyLbl.Text:gsub("[^%d]", ""))) or 1
                         end
+                        addItem(nameLbl.Text, q, frame.Name)
                     end
                 end
             end
