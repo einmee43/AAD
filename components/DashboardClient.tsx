@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import KageBackdrop from '@/components/KageBackdrop';
 import {
   Activity,
   Bot,
@@ -10,6 +11,7 @@ import {
   ChevronRight,
   Clock,
   Copy,
+  Flame,
   KeyRound,
   LogOut,
   Plus,
@@ -139,6 +141,7 @@ function getRarityStyle(rarity?: string, name?: string) {
 }
 
 export default function DashboardClient({ user }: { user: UserInfo }) {
+  const [theme, setTheme] = useState<'cyber' | 'kage'>('cyber');
   const [tab, setTab] = useState<'profile' | 'history' | 'keys'>('profile');
   const [hours, setHours] = useState(24);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -183,6 +186,17 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
       setKeys(data.keys || []);
     }
   }, []);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('aa_theme');
+    if (saved === 'kage' || saved === 'cyber') setTheme(saved);
+  }, []);
+
+  const toggleTheme = () => {
+    const next = theme === 'cyber' ? 'kage' : 'cyber';
+    setTheme(next);
+    localStorage.setItem('aa_theme', next);
+  };
 
   useEffect(() => {
     fetchDashboard();
@@ -317,35 +331,94 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   const originUrl =
     typeof window !== 'undefined' ? window.location.origin : 'https://aad-hazel.vercel.app';
 
+  const isKage = theme === 'kage';
+
   return (
-    <div className="min-h-screen bg-[#090714] text-zinc-100 relative overflow-x-hidden">
-      {/* Ambient Cyber Purple Glow */}
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_top_left,_rgba(139,92,246,0.18),_transparent_50%),radial-gradient(ellipse_at_bottom_right,_rgba(99,102,241,0.14),_transparent_50%)]" />
+    <div
+      className={`min-h-screen text-zinc-100 relative overflow-x-hidden transition-colors duration-500 ${
+        isKage ? 'bg-[#070506]' : 'bg-[#090714]'
+      }`}
+    >
+      {/* Dynamic Theme Backdrop */}
+      {isKage ? (
+        <KageBackdrop />
+      ) : (
+        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_top_left,_rgba(139,92,246,0.18),_transparent_50%),radial-gradient(ellipse_at_bottom_right,_rgba(99,102,241,0.14),_transparent_50%)]" />
+      )}
 
       {/* Top Navbar */}
-      <header className="sticky top-0 z-20 border-b border-purple-500/20 bg-[#0d0a1c]/85 backdrop-blur-xl">
+      <header
+        className={`sticky top-0 z-20 border-b backdrop-blur-xl ${
+          isKage
+            ? 'border-red-500/25 bg-[#0c0709]/85'
+            : 'border-purple-500/20 bg-[#0d0a1c]/85'
+        }`}
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-purple-600/25 border border-purple-400/40 flex items-center justify-center text-purple-300 shadow-[0_0_15px_rgba(168,85,247,0.3)]">
-              <Sparkles className="w-5 h-5" />
+            <div
+              className={`h-9 w-9 rounded-xl border flex items-center justify-center ${
+                isKage
+                  ? 'bg-red-600/20 border-red-500/45 text-red-400 shadow-[0_0_15px_rgba(220,38,38,0.35)]'
+                  : 'bg-purple-600/25 border-purple-400/40 text-purple-300 shadow-[0_0_15px_rgba(168,85,247,0.3)]'
+              }`}
+            >
+              {isKage ? <Flame className="w-5 h-5" /> : <Sparkles className="w-5 h-5" />}
             </div>
             <div>
-              <h1 className="font-bold text-sm sm:text-base tracking-wide bg-gradient-to-r from-white to-purple-300 bg-clip-text text-transparent">
-                AA DROP TRACKER
+              <h1
+                className={`font-bold text-sm sm:text-base tracking-wide bg-gradient-to-r bg-clip-text text-transparent ${
+                  isKage ? 'from-white to-red-400' : 'from-white to-purple-300'
+                }`}
+              >
+                {isKage ? 'KAGE // AA TRACKER' : 'AA DROP TRACKER'}
               </h1>
-              <p className="text-[11px] text-purple-300/60 hidden sm:block">
+              <p
+                className={`text-[11px] hidden sm:block ${
+                  isKage ? 'text-red-300/60' : 'text-purple-300/60'
+                }`}
+              >
                 Anime Adventures Command Center
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            <div className="flex rounded-xl bg-[#15102b] border border-purple-500/25 p-1 text-xs">
+            {/* Theme Switcher Pill */}
+            <button
+              onClick={toggleTheme}
+              title="สลับธีมเว็บ"
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-medium transition cursor-pointer ${
+                isKage
+                  ? 'bg-red-950/50 border-red-500/40 text-red-200 hover:bg-red-900/50'
+                  : 'bg-[#15102b] border-purple-500/30 text-purple-200 hover:border-purple-400/60'
+              }`}
+            >
+              {isKage ? (
+                <>
+                  <Flame className="w-3.5 h-3.5 text-red-400" />
+                  <span className="hidden md:inline">Kage</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                  <span className="hidden md:inline">Cyber</span>
+                </>
+              )}
+            </button>
+
+            <div
+              className={`flex rounded-xl border p-1 text-xs ${
+                isKage ? 'bg-[#160b0e] border-red-500/25' : 'bg-[#15102b] border-purple-500/25'
+              }`}
+            >
               <button
                 onClick={() => setTab('profile')}
                 className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer ${
                   tab === 'profile'
-                    ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-500/25'
+                    ? isKage
+                      ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white shadow-md shadow-red-500/25'
+                      : 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-500/25'
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
@@ -355,7 +428,9 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                 onClick={() => setTab('history')}
                 className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer ${
                   tab === 'history'
-                    ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-500/25'
+                    ? isKage
+                      ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white shadow-md shadow-red-500/25'
+                      : 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-500/25'
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
@@ -365,7 +440,9 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                 onClick={() => setTab('keys')}
                 className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center gap-1.5 ${
                   tab === 'keys'
-                    ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-500/25'
+                    ? isKage
+                      ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white shadow-md shadow-red-500/25'
+                      : 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-500/25'
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
@@ -418,16 +495,30 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
               </div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                {/* LEFT COLUMN: Cyber Anime Profile Card */}
-                <section className="lg:col-span-4 rounded-2xl border border-purple-500/35 bg-gradient-to-b from-[#171130]/95 via-[#110c24]/95 to-[#0d091c]/95 p-5 shadow-[0_0_40px_rgba(139,92,246,0.15)] relative overflow-hidden">
+                {/* LEFT COLUMN: Profile Card */}
+                <section
+                  className={`lg:col-span-4 rounded-2xl border p-5 relative overflow-hidden ${
+                    isKage
+                      ? 'border-red-500/35 bg-gradient-to-b from-[#1a0b0f]/92 via-[#11080a]/92 to-[#0b0607]/95 shadow-[0_0_40px_rgba(220,38,38,0.16)]'
+                      : 'border-purple-500/35 bg-gradient-to-b from-[#171130]/95 via-[#110c24]/95 to-[#0d091c]/95 shadow-[0_0_40px_rgba(139,92,246,0.15)]'
+                  }`}
+                >
                   {/* Header */}
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <div className="text-sm font-bold tracking-wider uppercase text-white flex items-center gap-2">
-                        <Sparkles className="w-4 h-4 text-purple-400" />
+                        {isKage ? (
+                          <Flame className="w-4 h-4 text-red-400" />
+                        ) : (
+                          <Sparkles className="w-4 h-4 text-purple-400" />
+                        )}
                         {activeAccount.bot_name}
                       </div>
-                      <div className="text-[11px] text-purple-300/60">
+                      <div
+                        className={`text-[11px] ${
+                          isKage ? 'text-red-300/60' : 'text-purple-300/60'
+                        }`}
+                      >
                         {activeAccount.roblox_username || 'Roblox Player'}
                       </div>
                     </div>
@@ -461,22 +552,42 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                   {/* Avatar on Glowing Pedestal */}
                   <div className="relative flex flex-col items-center justify-center py-4 my-1">
                     {/* Starburst Aura */}
-                    <div className="absolute w-48 h-48 rounded-full bg-purple-600/20 blur-2xl pointer-events-none" />
+                    <div
+                      className={`absolute w-48 h-48 rounded-full blur-2xl pointer-events-none ${
+                        isKage ? 'bg-red-600/20' : 'bg-purple-600/20'
+                      }`}
+                    />
                     <div className="relative z-10 h-44 flex items-center justify-center">
                       {activeAccount.roblox_user_id && avatarCache[activeAccount.roblox_user_id] ? (
                         <img
                           src={avatarCache[activeAccount.roblox_user_id]}
                           alt={activeAccount.roblox_username || activeAccount.bot_name}
-                          className="h-44 w-44 object-contain drop-shadow-[0_0_20px_rgba(168,85,247,0.45)]"
+                          className={`h-44 w-44 object-contain ${
+                            isKage
+                              ? 'drop-shadow-[0_0_22px_rgba(220,38,38,0.5)]'
+                              : 'drop-shadow-[0_0_20px_rgba(168,85,247,0.45)]'
+                          }`}
                         />
                       ) : (
-                        <div className="w-28 h-28 rounded-full border border-purple-500/40 bg-purple-950/50 flex items-center justify-center text-purple-300">
+                        <div
+                          className={`w-28 h-28 rounded-full border flex items-center justify-center ${
+                            isKage
+                              ? 'border-red-500/40 bg-red-950/50 text-red-300'
+                              : 'border-purple-500/40 bg-purple-950/50 text-purple-300'
+                          }`}
+                        >
                           <Bot className="w-12 h-12" />
                         </div>
                       )}
                     </div>
                     {/* Glowing Pedestal Ring */}
-                    <div className="w-44 h-5 -mt-3 rounded-[100%] border-2 border-purple-400/60 bg-purple-500/20 shadow-[0_0_25px_rgba(168,85,247,0.6)]" />
+                    <div
+                      className={`w-44 h-5 -mt-3 rounded-[100%] border-2 ${
+                        isKage
+                          ? 'border-red-500/65 bg-red-500/20 shadow-[0_0_25px_rgba(220,38,38,0.65)]'
+                          : 'border-purple-400/60 bg-purple-500/20 shadow-[0_0_25px_rgba(168,85,247,0.6)]'
+                      }`}
+                    />
                   </div>
 
                   {/* Bot Switcher + Level Badge */}
@@ -486,19 +597,33 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                         setSelectedIdx((i) => (i - 1 + accounts.length) % accounts.length)
                       }
                       disabled={accounts.length <= 1}
-                      className="p-1.5 rounded-lg border border-purple-500/30 bg-[#1a1336] text-purple-300 hover:text-white disabled:opacity-30 cursor-pointer"
+                      className={`p-1.5 rounded-lg border disabled:opacity-30 cursor-pointer ${
+                        isKage
+                          ? 'border-red-500/30 bg-[#1f0d12] text-red-300 hover:text-white'
+                          : 'border-purple-500/30 bg-[#1a1336] text-purple-300 hover:text-white'
+                      }`}
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
 
-                    <div className="px-5 py-1 rounded-xl border border-purple-400/50 bg-[#1e163d] text-sm font-bold tracking-wider shadow-[0_0_15px_rgba(168,85,247,0.25)]">
+                    <div
+                      className={`px-5 py-1 rounded-xl border text-sm font-bold tracking-wider ${
+                        isKage
+                          ? 'border-red-500/50 bg-[#260e14] shadow-[0_0_15px_rgba(220,38,38,0.28)]'
+                          : 'border-purple-400/50 bg-[#1e163d] shadow-[0_0_15px_rgba(168,85,247,0.25)]'
+                      }`}
+                    >
                       {level > 0 ? `LV. ${level}` : activeAccount.bot_name}
                     </div>
 
                     <button
                       onClick={() => setSelectedIdx((i) => (i + 1) % accounts.length)}
                       disabled={accounts.length <= 1}
-                      className="p-1.5 rounded-lg border border-purple-500/30 bg-[#1a1336] text-purple-300 hover:text-white disabled:opacity-30 cursor-pointer"
+                      className={`p-1.5 rounded-lg border disabled:opacity-30 cursor-pointer ${
+                        isKage
+                          ? 'border-red-500/30 bg-[#1f0d12] text-red-300 hover:text-white'
+                          : 'border-purple-500/30 bg-[#1a1336] text-purple-300 hover:text-white'
+                      }`}
                     >
                       <ChevronRight className="w-4 h-4" />
                     </button>
@@ -508,13 +633,25 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                   <div className="space-y-1.5 mb-5">
                     <div className="flex justify-between text-[11px]">
                       <span className="text-zinc-400">XP Progress</span>
-                      <span className="text-purple-300 font-semibold">
+                      <span
+                        className={`font-semibold ${isKage ? 'text-red-300' : 'text-purple-300'}`}
+                      >
                         {level > 0 ? `${xpPct}%` : activeAccount.current_wave || 'Ready'}
                       </span>
                     </div>
-                    <div className="h-2 rounded-full bg-[#090714] border border-purple-500/25 overflow-hidden">
+                    <div
+                      className={`h-2 rounded-full border overflow-hidden ${
+                        isKage
+                          ? 'bg-[#0c0608] border-red-500/25'
+                          : 'bg-[#090714] border-purple-500/25'
+                      }`}
+                    >
                       <div
-                        className="h-full rounded-full bg-gradient-to-r from-purple-500 via-fuchsia-500 to-indigo-400 transition-all duration-500"
+                        className={`h-full rounded-full bg-gradient-to-r transition-all duration-500 ${
+                          isKage
+                            ? 'from-red-600 via-rose-500 to-amber-400'
+                            : 'from-purple-500 via-fuchsia-500 to-indigo-400'
+                        }`}
                         style={{ width: `${level > 0 ? xpPct : 100}%` }}
                       />
                     </div>
