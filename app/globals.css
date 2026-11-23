@@ -246,3 +246,80 @@ body {
 .animate-pedestal {
   animation: pedestalPulse 3.2s ease-in-out infinite;
 }
+
+/* Living Background Effects (inspired by d4rkspace) */
+@keyframes auroraFloat1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(60px, -40px) scale(1.12); }
+  66% { transform: translate(-40px, 50px) scale(0.95); }
+}
+
+@keyframes auroraFloat2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-70px, -50px) scale(1.15); }
+}
+
+@keyframes bgDrift {
+  0%, 100% { transform: scale(1.08) translate(0, 0); }
+  50% { transform: scale(1.14) translate(-1.2%, -0.8%); }
+}
+
+.animate-bg-drift {
+  animation: bgDrift 22s ease-in-out infinite;
+}
+
+.aurora-blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(110px);
+  opacity: 0.32;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.aurora-1 {
+  width: 520px;
+  height: 520px;
+  top: -120px;
+  left: -80px;
+  background: radial-gradient(circle, rgba(255, 74, 99, 0.75), rgba(212, 20, 58, 0.2) 70%);
+  animation: auroraFloat1 18s ease-in-out infinite;
+}
+
+.aurora-2 {
+  width: 480px;
+  height: 480px;
+  bottom: -140px;
+  right: -80px;
+  background: radial-gradient(circle, rgba(255, 154, 31, 0.55), rgba(212, 20, 58, 0.2) 70%);
+  animation: auroraFloat2 22s ease-in-out infinite;
+}
+
+.aurora-3 {
+  width: 380px;
+  height: 380px;
+  top: 40%;
+  left: 45%;
+  background: radial-gradient(circle, rgba(155, 107, 255, 0.35), transparent 70%);
+  animation: auroraFloat1 26s ease-in-out infinite reverse;
+}
+
+.kage-cyber-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(255, 74, 99, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 74, 99, 0.06) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 45%, #000 30%, transparent 100%);
+  pointer-events: none;
+}
+
+.kage-grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.04;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.7) 1px, transparent 0);
+  background-size: 3px 3px;
+}

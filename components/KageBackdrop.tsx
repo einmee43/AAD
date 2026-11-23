@@ -5,6 +5,7 @@ import * as THREE from 'three';
 
 export default function KageBackdrop() {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const glowRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -101,8 +102,11 @@ export default function KageBackdrop() {
     let targetY = 0;
     const onPointerMove = (e: PointerEvent) => {
       if (prefersReducedMotion) return;
-      targetX = ((e.clientX / window.innerWidth) - 0.5) * 1.1;
-      targetY = -((e.clientY / window.innerHeight) - 0.5) * 0.7;
+      targetX = ((e.clientX / window.innerWidth) - 0.5) * 1.4;
+      targetY = -((e.clientY / window.innerHeight) - 0.5) * 0.9;
+      if (glowRef.current) {
+        glowRef.current.style.transform = `translate3d(${e.clientX - 240}px, ${e.clientY - 240}px, 0)`;
+      }
     };
 
     const onResize = () => {
@@ -171,10 +175,23 @@ export default function KageBackdrop() {
       <img
         src="/themes/reze-bg.jpg"
         alt=""
-        className="absolute inset-0 w-full h-full object-cover blur-md opacity-35 scale-110"
+        className="absolute inset-0 w-full h-full object-cover blur-md opacity-30 animate-bg-drift"
       />
-      <div className="absolute inset-0 bg-gradient-to-b from-[#070506]/70 via-[#070506]/50 to-[#070506]/90" />
+      <div className="aurora-blob aurora-1" />
+      <div className="aurora-blob aurora-2" />
+      <div className="aurora-blob aurora-3" />
+      <div className="kage-cyber-grid" />
+      <div
+        ref={glowRef}
+        className="absolute top-0 left-0 w-[480px] h-[480px] rounded-full pointer-events-none transition-transform duration-150 ease-out"
+        style={{
+          background:
+            'radial-gradient(circle, rgba(255,74,99,0.18) 0%, rgba(255,154,31,0.06) 40%, transparent 70%)',
+        }}
+      />
+      <div className="absolute inset-0 bg-gradient-to-b from-[#070506]/65 via-[#070506]/40 to-[#070506]/85" />
       <div ref={containerRef} className="absolute inset-0" />
+      <div className="kage-grain" />
     </div>
   );
 }
