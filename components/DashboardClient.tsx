@@ -507,7 +507,13 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                         <img
                           src={avatarCache[activeAccount.roblox_user_id]}
                           alt={activeAccount.roblox_username || activeAccount.bot_name}
-                          className="h-48 w-48 object-contain drop-shadow-[0_0_24px_rgba(220,38,38,0.55)]"
+                          className="h-48 w-48 rounded-3xl object-contain drop-shadow-[0_0_24px_rgba(220,38,38,0.55)]"
+                          style={{
+                            WebkitMaskImage:
+                              'radial-gradient(ellipse 74% 78% at 50% 50%, #000 55%, transparent 98%)',
+                            maskImage:
+                              'radial-gradient(ellipse 74% 78% at 50% 50%, #000 55%, transparent 98%)',
+                          }}
                         />
                       ) : (
                         <div className="w-28 h-28 rounded-full border border-red-500/40 bg-red-950/50 flex items-center justify-center text-red-300">
