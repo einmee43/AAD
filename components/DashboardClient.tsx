@@ -69,24 +69,29 @@ interface TeamUnit {
   trait?: string | null;
 }
 
-const KNOWN_TRAITS = new Set([
-  'vigorous',
-  'range',
-  'swift',
-  'adept',
-  'culling',
-  'sniper',
-  'godspeed',
-  'reaper',
-  'celestial',
-  'divine',
-  'golden',
-  'unique',
-]);
+const TRAIT_ALIAS: Record<string, string> = {
+  vigorous: 'vigorous',
+  superior: 'vigorous',
+  range: 'range',
+  marksman: 'range',
+  swift: 'swift',
+  nimble: 'swift',
+  adept: 'adept',
+  culling: 'culling',
+  sniper: 'sniper',
+  godspeed: 'godspeed',
+  reaper: 'reaper',
+  celestial: 'celestial',
+  ethereal: 'celestial',
+  divine: 'divine',
+  golden: 'golden',
+  unique: 'unique',
+};
 
 function getTraitIcon(trait?: string | null): string | null {
   const t = (trait || '').trim().toLowerCase();
-  if (KNOWN_TRAITS.has(t)) return `/traits/${t}.png`;
+  const mapped = TRAIT_ALIAS[t];
+  if (mapped) return `/traits/${mapped}.png`;
   return null;
 }
 
@@ -939,72 +944,72 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2.5">
-                      {/* 6 Equipped Unit Slots */}
-                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                        {[1, 2, 3, 4, 5, 6].map((slotNum) => {
-                          const unit = activeTeam.find((u) => u.slot === slotNum);
-                          const unitImg = unit ? unitIconCache[unit.name] : '';
-                          const traitImg = unit ? getTraitIcon(unit.trait) : null;
-                          return (
-                            <div
-                              key={slotNum}
-                              title={
-                                unit
-                                  ? `${unit.name}${unit.level ? ` (Lv.${unit.level})` : ''}${
-                                      unit.trait ? ` • ${unit.trait}` : ''
-                                    }`
-                                  : `ช่องที่ ${slotNum} ว่าง`
-                              }
-                              className={`relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl border overflow-hidden flex items-center justify-center transition-all ${
-                                unit
-                                  ? 'border-red-500/45 bg-gradient-to-b from-red-950/60 to-[#0d0507] shadow-[0_0_12px_rgba(220,38,38,0.2)]'
-                                  : 'border-white/10 bg-black/30 opacity-45'
-                              }`}
-                            >
-                              {unit ? (
-                                <>
-                                  {unitImg ? (
-                                    <img
-                                      src={unitImg}
-                                      alt={unit.name}
-                                      className="w-full h-full object-cover"
-                                    />
-                                  ) : (
-                                    <Shield className="w-6 h-6 text-red-400/80" />
-                                  )}
-                                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-black/30 pointer-events-none" />
-                                  <span className="absolute top-1 left-1 text-[9px] font-bold text-zinc-300 leading-none">
-                                    #{slotNum}
-                                  </span>
-                                  {traitImg && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* 6 Equipped Unit Slots (uniform 64x64) */}
+                      {[1, 2, 3, 4, 5, 6].map((slotNum) => {
+                        const unit = activeTeam.find((u) => u.slot === slotNum);
+                        const unitImg = unit ? unitIconCache[unit.name] : '';
+                        const traitImg = unit ? getTraitIcon(unit.trait) : null;
+                        return (
+                          <div
+                            key={slotNum}
+                            title={
+                              unit
+                                ? `${unit.name}${unit.level ? ` (Lv.${unit.level})` : ''}${
+                                    unit.trait ? ` • ${unit.trait}` : ''
+                                  }`
+                                : `ช่องที่ ${slotNum} ว่าง`
+                            }
+                            className={`relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl border overflow-hidden flex items-center justify-center shrink-0 transition-all ${
+                              unit
+                                ? 'border-red-500/45 bg-gradient-to-b from-red-950/60 to-[#0d0507] shadow-[0_0_12px_rgba(220,38,38,0.2)]'
+                                : 'border-white/10 bg-black/30 opacity-45'
+                            }`}
+                          >
+                            {unit ? (
+                              <>
+                                {unitImg ? (
+                                  <img
+                                    src={unitImg}
+                                    alt={unit.name}
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <Shield className="w-6 h-6 text-red-400/80" />
+                                )}
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-black/30 pointer-events-none" />
+                                <span className="absolute top-1 left-1 text-[9px] font-bold text-zinc-300 leading-none">
+                                  #{slotNum}
+                                </span>
+                                {traitImg && (
+                                  <span className="absolute top-1 right-1 w-4 h-4 rounded-md bg-black/65 border border-white/10 flex items-center justify-center p-0.5 shadow">
                                     <img
                                       src={traitImg}
                                       alt={unit.trait || 'trait'}
-                                      className="absolute top-1 right-1 w-4 h-4 object-contain drop-shadow-[0_0_4px_rgba(0,0,0,0.9)]"
+                                      className="w-full h-full object-contain"
                                     />
-                                  )}
-                                  {unit.level ? (
-                                    <span className="absolute bottom-1 inset-x-1 text-center text-[10px] font-bold text-white leading-none drop-shadow">
-                                      Lv.{unit.level}
-                                    </span>
-                                  ) : null}
-                                </>
-                              ) : (
-                                <span className="text-[10px] text-zinc-500">ว่าง</span>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
+                                  </span>
+                                )}
+                                {unit.level ? (
+                                  <span className="absolute bottom-1 inset-x-1 text-center text-[10px] font-bold text-white leading-none drop-shadow">
+                                    Lv.{unit.level}
+                                  </span>
+                                ) : null}
+                              </>
+                            ) : (
+                              <span className="text-[10px] text-zinc-500">ว่าง</span>
+                            )}
+                          </div>
+                        );
+                      })}
 
-                      {/* Live Wave Badge */}
-                      <div className="rounded-xl border border-red-500/35 bg-[#0b0406] px-3.5 py-2 min-w-[74px] text-center">
-                        <div className="flex items-center justify-center gap-1 text-[10px] text-red-300/80 uppercase tracking-wider">
+                      {/* Live Wave Badge (exact same 64x64 size as unit slots) */}
+                      <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl border border-red-500/35 bg-[#0b0406] flex flex-col items-center justify-center shrink-0 text-center">
+                        <div className="flex items-center justify-center gap-0.5 text-[10px] text-red-300/80 leading-none">
                           <Waves className="w-3 h-3" />
-                          เวฟ
+                          <span>เวฟ</span>
                         </div>
-                        <div className="text-base font-bold text-white mt-0.5">
+                        <div className="text-lg font-bold text-white leading-tight mt-0.5">
                           {activeAccount.current_wave && activeAccount.current_wave !== '-'
                             ? activeAccount.current_wave.replace(/Wave\s*/i, '')
                             : '-'}
