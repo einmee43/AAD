@@ -162,7 +162,7 @@ local function readUsefulItems()
         end
     end
 
-    local function addItem(rawName, amt, idName)
+    local function addItem(rawName, amt, idName, extra)
         if not rawName or type(rawName) ~= "string" then return end
         local trimmed = rawName:match("^%s*(.-)%s*$")
         if not trimmed or #trimmed == 0 then return end
@@ -170,9 +170,19 @@ local function readUsefulItems()
         if low == "portals" or low == "item" or low == "items" or low == "item name" or low:find("gift") then
             return
         end
-        local key = trimmed
+        local isPortal = low:find("portal") ~= nil or (idName and idName:lower():find("portal") ~= nil)
+        local key = trimmed .. (extra and extra.tier and ("_" .. extra.tier) or "")
         if not counts[key] then
-            counts[key] = { name = trimmed, amount = 0, rarity = inferRarity(trimmed, idName) }
+            counts[key] = {
+                name = trimmed,
+                amount = 0,
+                rarity = inferRarity(trimmed, idName),
+                category = isPortal and "portal" or "item",
+                tier = extra and extra.tier or nil,
+                hearts = extra and extra.hearts or nil,
+                multiplier = extra and extra.multiplier or nil,
+                mods = extra and extra.mods or nil,
+            }
         end
         counts[key].amount = counts[key].amount + (tonumber(amt) or 1)
     end
@@ -195,7 +205,29 @@ local function readUsefulItems()
                         if qtyLbl and qtyLbl:IsA("TextLabel") then
                             q = tonumber((qtyLbl.Text:gsub("[^%d]", ""))) or 1
                         end
-                        addItem(nameLbl.Text, q, frame.Name)
+                        local extra = {}
+                        -- Extract portal tier (T1..T10) & optional metadata if present on frame
+                        local tierMatch = nameLbl.Text:match("[Tt](%d+)") or frame.Name:match("[Tt](%d+)")
+                        local enhLbl = mainFrame and mainFrame:FindFirstChild("EnhanceLevel")
+                        if not tierMatch and enhLbl and enhLbl:IsA("TextLabel") then
+                            tierMatch = enhLbl.Text:match("[Tt](%d+)")
+                        end
+                        local tierLbl = frame:FindFirstChild("Tier", true)
+                        if not tierMatch and tierLbl and tierLbl:IsA("TextLabel") then
+                            tierMatch = tierLbl.Text:match("(%d+)")
+                        end
+                        if tierMatch then
+                            extra.tier = "T" .. tierMatch
+                        end
+                        local livesLbl = frame:FindFirstChild("Lives", true) or frame:FindFirstChild("Hearts", true)
+                        if livesLbl and livesLbl:IsA("TextLabel") then
+                            extra.hearts = tonumber((livesLbl.Text:gsub("[^%d]", "")))
+                        end
+                        local multLbl = frame:FindFirstChild("Multiplier", true) or frame:FindFirstChild("RewardMultiplier", true)
+                        if multLbl and multLbl:IsA("TextLabel") and #multLbl.Text > 0 then
+                            extra.multiplier = multLbl.Text
+                        end
+                        addItem(nameLbl.Text, q, frame.Name, extra)
                     end
                 end
             end
@@ -209,6 +241,45 @@ local function readUsefulItems()
     return list
 end
 
+-- Read equipped 6-unit team from PlayerGui.spawn_units.Lives.Frame.Units (slots 1..6)
+local function readEquippedTeam()
+    local team = {}
+    pcall(function()
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        local su = pg and pg:FindFirstChild("spawn_units")
+        local lives = su and su:FindFirstChild("Lives")
+        local frame = lives and lives:FindFirstChild("Frame")
+        local units = frame and frame:FindFirstChild("Units")
+        if not units then return end
+
+        for slot = 1, 6 do
+            local slotObj = units:FindFirstChild(tostring(slot))
+            if slotObj and slotObj:IsA("GuiObject") and slotObj.Visible then
+                local nameLbl = slotObj:FindFirstChild("name")
+                local unitName = (nameLbl and nameLbl:IsA("TextLabel") and nameLbl.Text) or ""
+                if #unitName > 0 and unitName ~= "Unit" and unitName ~= "Empty" then
+                    local lvl = slotObj:GetAttribute("Level")
+                    if not lvl then
+                        local lvlLbl = slotObj:FindFirstChild("Level") or slotObj:FindFirstChild("Lvl") or slotObj:FindFirstChild("locked_text")
+                        if lvlLbl and lvlLbl:IsA("TextLabel") then
+                            lvl = tonumber((lvlLbl.Text:gsub("[^%d]", "")))
+                        end
+                    end
+                    local costLbl = slotObj:FindFirstChild("cost")
+                    local costVal = (costLbl and costLbl:IsA("TextLabel") and costLbl.Text ~= "9999") and tonumber((costLbl.Text:gsub("[^%d]", ""))) or nil
+                    table.insert(team, {
+                        slot = slot,
+                        name = unitName,
+                        level = lvl,
+                        cost = costVal,
+                    })
+                end
+            end
+        end
+    end)
+    return team
+end
+
 -- Detect current game state (Lobby vs Farming + Wave/Map + Dungeon Depth)
 local function detectState()
     local isLobby = (game.PlaceId == 8304191830)
@@ -219,7 +290,7 @@ local function detectState()
 
     pcall(function()
         local waveVal = Workspace:FindFirstChild("_wave_num", true) or Workspace:FindFirstChild("Wave", true)
-        if waveVal and waveVal:IsA("ValueBase") then
+        if waveVal and waveVal:IsA("ValueBase") and tonumber(waveVal.Value) and tonumber(waveVal.Value) > 0 then
             waveStr = "Wave " .. tostring(waveVal.Value)
         end
         local mapAttr = Workspace:GetAttribute("MapName") or Workspace:GetAttribute("LevelName")
@@ -227,10 +298,19 @@ local function detectState()
         local modeAttr = Workspace:GetAttribute("GameMode") or Workspace:GetAttribute("Mode")
         if modeAttr then mode = tostring(modeAttr) end
 
-        -- Read from PlayerGui.Waves.HealthBar.LevelTitle when in-game
+        -- Read from PlayerGui.Waves.HealthBar when in-game
         local pg = LocalPlayer:FindFirstChild("PlayerGui")
         local waves = pg and pg:FindFirstChild("Waves")
         local hb = waves and waves:FindFirstChild("HealthBar")
+        if hb then
+            local wn = hb:FindFirstChild("WaveNumber")
+            if waveStr == "-" and wn and wn:IsA("TextLabel") then
+                local wNum = tonumber((wn.Text:gsub("[^%d]", "")))
+                if wNum and wNum > 0 then
+                    waveStr = "Wave " .. tostring(wNum)
+                end
+            end
+        end
         local lt = hb and hb:FindFirstChild("LevelTitle")
         if lt then
             local mLbl = lt:FindFirstChild("Map")
@@ -272,7 +352,8 @@ task.spawn(function()
                 current_map = mapName,
                 current_wave = waveStr,
                 currencies = cur,
-                items = readUsefulItems()
+                items = readUsefulItems(),
+                team = readEquippedTeam()
             })
         end
         task.wait(45)

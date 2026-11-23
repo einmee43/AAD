@@ -14,15 +14,18 @@ import {
   Clock,
   Copy,
   Flame,
+  Heart,
   KeyRound,
   LogOut,
   Plus,
   RefreshCw,
   Search,
+  Shield,
   Sparkles,
   Trash2,
   TrendingUp,
   Trophy,
+  Waves,
 } from 'lucide-react';
 
 interface UserInfo {
@@ -50,6 +53,17 @@ interface RewardItem {
   amount: number;
   category?: string;
   rarity?: string;
+  tier?: string;
+  hearts?: number;
+  multiplier?: string;
+  mods?: string;
+}
+
+interface TeamUnit {
+  slot: number;
+  name: string;
+  level?: number | null;
+  cost?: number | null;
 }
 
 interface RunLog {
@@ -65,7 +79,7 @@ interface RunLog {
 
 interface Snapshot {
   account_id: string;
-  currencies: Record<string, number>;
+  currencies: Record<string, unknown>;
   items: RewardItem[];
   updated_at: string;
 }
@@ -166,7 +180,10 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   const [loading, setLoading] = useState(false);
 
   // Filters
+  const [inventoryTab, setInventoryTab] = useState<'all' | 'items' | 'portals' | 'team'>('all');
   const [rarityFilter, setRarityFilter] = useState<'ALL' | 'Secret' | 'Mythic' | 'Legendary'>('ALL');
+  const [portalKind, setPortalKind] = useState<string>('ALL');
+  const [portalTier, setPortalTier] = useState<string>('ALL');
   const [search, setSearch] = useState('');
   const [botFilter, setBotFilter] = useState('ALL');
   const [resultFilter, setResultFilter] = useState('ALL');
@@ -298,9 +315,9 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
 
   const activeSnap = activeAccount ? snapshotMap.get(activeAccount.id) : undefined;
   const activeCurrencies = activeSnap?.currencies || {};
-  const rawLevel = activeCurrencies['_level'] || 0;
-  const rawXp = activeCurrencies['_xp'] || 0;
-  const rawMaxXp = activeCurrencies['_max_xp'] || 0;
+  const rawLevel = Number(activeCurrencies['_level']) || 0;
+  const rawXp = Number(activeCurrencies['_xp']) || 0;
+  const rawMaxXp = Number(activeCurrencies['_max_xp']) || 0;
   const isPlaceholderLvl = rawLevel >= 999 || rawMaxXp === 999999;
   const level = isPlaceholderLvl ? 0 : rawLevel;
   const xp = isPlaceholderLvl ? 0 : rawXp;
@@ -312,10 +329,37 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
       ? 100
       : 0;
 
+  const activeTeam: TeamUnit[] = Array.isArray(activeCurrencies['_team'])
+    ? (activeCurrencies['_team'] as TeamUnit[])
+    : [];
+
+  const allBotItems = activeSnap?.items || [];
+  const portalItems = allBotItems.filter(
+    (it) => it.category === 'portal' || it.name.toLowerCase().includes('portal')
+  );
+  const regularItems = allBotItems.filter(
+    (it) => it.category !== 'portal' && !it.name.toLowerCase().includes('portal')
+  );
+
   // Filtered inventory items for active bot
-  const activeItems = (activeSnap?.items || []).filter((it) => {
+  const activeItems = (
+    inventoryTab === 'portals'
+      ? portalItems
+      : inventoryTab === 'items'
+      ? regularItems
+      : allBotItems
+  ).filter((it) => {
     const style = getRarityStyle(it.rarity, it.name);
     if (rarityFilter !== 'ALL' && style.label !== rarityFilter) return false;
+    if (inventoryTab === 'portals') {
+      if (portalKind !== 'ALL' && !it.name.toLowerCase().includes(portalKind.toLowerCase())) {
+        return false;
+      }
+      if (portalTier !== 'ALL') {
+        const t = it.tier || (it.name.match(/T(\d+)/i)?.[0]?.toUpperCase() ?? '');
+        if (t !== portalTier) return false;
+      }
+    }
     if (search.trim() && !it.name.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
@@ -654,6 +698,81 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
 
                 {/* RIGHT COLUMN: Live KPIs + Inventory Grid + Recent Runs */}
                 <section className="lg:col-span-8 space-y-5">
+                  {/* Live Match & 6-Unit Team Banner */}
+                  <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex items-center gap-2 text-xs">
+                        <span
+                          className={`w-2 h-2 rounded-full ${
+                            activeAccount.live_status === 'farming'
+                              ? 'bg-emerald-400 animate-pulse'
+                              : activeAccount.live_status === 'lobby'
+                              ? 'bg-sky-400'
+                              : 'bg-zinc-500'
+                          }`}
+                        />
+                        <span className="font-semibold text-zinc-200">
+                          {activeAccount.live_status === 'farming'
+                            ? 'อยู่ในแมตช์'
+                            : activeAccount.live_status === 'lobby'
+                            ? 'อยู่ใน Lobby'
+                            : 'ออฟไลน์'}
+                        </span>
+                      </div>
+                      <div className="text-base font-bold text-white truncate">
+                        {activeAccount.current_mode || 'Lobby'}
+                      </div>
+                      <div className="text-xs text-zinc-400 truncate">
+                        {activeAccount.current_map || 'Main Lobby'}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      {/* 6 Equipped Unit Slots */}
+                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                        {[1, 2, 3, 4, 5, 6].map((slotNum) => {
+                          const unit = activeTeam.find((u) => u.slot === slotNum);
+                          return (
+                            <div
+                              key={slotNum}
+                              title={unit ? `${unit.name}${unit.level ? ` (Lv.${unit.level})` : ''}` : `ช่องที่ ${slotNum} ว่าง`}
+                              className={`w-20 rounded-xl border px-2 py-1.5 flex flex-col justify-between min-h-[54px] transition-colors ${
+                                unit
+                                  ? 'border-red-500/40 bg-gradient-to-b from-red-950/50 to-[#0d0507]'
+                                  : 'border-white/10 bg-black/30 opacity-50'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between text-[10px]">
+                                <span className="text-zinc-500 font-semibold">#{slotNum}</span>
+                                {unit?.level ? (
+                                  <span className="px-1 rounded bg-red-500/20 text-red-200 font-bold">
+                                    Lv.{unit.level}
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="text-[11px] font-semibold text-zinc-100 truncate mt-1">
+                                {unit ? unit.name : 'ว่าง'}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Live Wave Badge */}
+                      <div className="rounded-xl border border-red-500/35 bg-[#0b0406] px-3.5 py-2 min-w-[74px] text-center">
+                        <div className="flex items-center justify-center gap-1 text-[10px] text-red-300/80 uppercase tracking-wider">
+                          <Waves className="w-3 h-3" />
+                          เวฟ
+                        </div>
+                        <div className="text-base font-bold text-white mt-0.5">
+                          {activeAccount.current_wave && activeAccount.current_wave !== '-'
+                            ? activeAccount.current_wave.replace(/Wave\s*/i, '')
+                            : '-'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Live KPI Strip */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
@@ -698,52 +817,169 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                     </div>
                   </div>
 
-                  {/* Top Rarity Tabs & Filter */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3">
-                    <div className="flex flex-wrap items-center gap-2" role="group" aria-label="กรองตามความหายาก">
-                      {(['ALL', 'Secret', 'Mythic', 'Legendary'] as const).map((r) => (
-                        <button
-                          key={r}
-                          onClick={() => setRarityFilter(r)}
-                          data-rarity={r === 'ALL' ? undefined : r.toLowerCase()}
-                          aria-pressed={rarityFilter === r}
-                          className="aa-chip"
-                        >
-                          {r === 'ALL' ? 'ทั้งหมด' : r}
-                        </button>
-                      ))}
+                  {/* Inventory Category Tabs, Rarity & Portal Tier Filters */}
+                  <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="หมวดคลัง">
+                        {(
+                          [
+                            { id: 'all', label: `ทั้งหมด (${allBotItems.length})` },
+                            { id: 'items', label: `ไอเทม (${regularItems.length})` },
+                            { id: 'portals', label: `ประตู (${portalItems.length})` },
+                            { id: 'team', label: `ทีมยูนิต (${activeTeam.length})` },
+                          ] as const
+                        ).map((t) => (
+                          <button
+                            key={t.id}
+                            onClick={() => setInventoryTab(t.id)}
+                            aria-selected={inventoryTab === t.id}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${
+                              inventoryTab === t.id
+                                ? 'bg-red-600/25 border-red-500/60 text-white shadow-[0_0_12px_rgba(239,68,68,0.25)]'
+                                : 'bg-[#090506]/70 border-white/10 text-zinc-400 hover:text-zinc-200'
+                            }`}
+                          >
+                            {t.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 text-red-300/60 absolute left-3 top-2.5" />
+                        <input
+                          value={search}
+                          onChange={(e) => setSearch(e.target.value)}
+                          placeholder="ค้นหาพอร์ทัล / ไอเทม..."
+                          className="pl-8 pr-3 py-1.5 text-xs rounded-xl bg-[#090506] border border-red-500/25 focus:outline-none focus:border-red-400 text-zinc-100"
+                        />
+                      </div>
                     </div>
 
-                    <div className="relative">
-                      <Search className="w-3.5 h-3.5 text-red-300/60 absolute left-3 top-2.5" />
-                      <input
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        placeholder="ค้นหาพอร์ทัล / ไอเทม..."
-                        className="pl-8 pr-3 py-1.5 text-xs rounded-xl bg-[#090506] border border-red-500/25 focus:outline-none focus:border-red-400 text-zinc-100"
-                      />
-                    </div>
+                    {inventoryTab !== 'team' && (
+                      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/5" role="group" aria-label="กรองตามความหายาก">
+                        {(['ALL', 'Secret', 'Mythic', 'Legendary'] as const).map((r) => (
+                          <button
+                            key={r}
+                            onClick={() => setRarityFilter(r)}
+                            data-rarity={r === 'ALL' ? undefined : r.toLowerCase()}
+                            aria-pressed={rarityFilter === r}
+                            className="aa-chip"
+                          >
+                            {r === 'ALL' ? 'ทุกระดับ' : r}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {inventoryTab === 'portals' && (
+                      <div className="space-y-2 pt-2 border-t border-white/5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {['ALL', 'Alien', 'Puppet', 'Shibuya', 'Sky', 'Explosion', 'Demon'].map((kind) => (
+                            <button
+                              key={kind}
+                              onClick={() => setPortalKind(kind)}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors cursor-pointer ${
+                                portalKind === kind
+                                  ? 'bg-red-500/25 border-red-400/60 text-red-100'
+                                  : 'bg-black/35 border-white/10 text-zinc-400 hover:text-zinc-200'
+                              }`}
+                            >
+                              {kind === 'ALL' ? 'ทุกชนิด' : kind}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {['ALL', 'T10', 'T9', 'T8', 'T7', 'T6', 'T5', 'T4', 'T3'].map((tier) => (
+                            <button
+                              key={tier}
+                              onClick={() => setPortalTier(tier)}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer ${
+                                portalTier === tier
+                                  ? 'bg-amber-500/25 border-amber-400/60 text-amber-200'
+                                  : 'bg-black/35 border-white/10 text-zinc-400 hover:text-zinc-200'
+                              }`}
+                            >
+                              {tier === 'ALL' ? 'ทุก Tier' : tier}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Inventory Grid */}
-                  {activeItems.length > 0 ? (
+                  {/* Inventory / Team Grid */}
+                  {inventoryTab === 'team' ? (
+                    activeTeam.length > 0 ? (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
+                        {activeTeam.map((unit) => (
+                          <div
+                            key={unit.slot}
+                            className="rounded-2xl border border-red-500/40 bg-gradient-to-b from-red-950/45 to-[#12070a] p-4 flex flex-col justify-between min-h-[140px] animate-fade-slide"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-black/45 border border-white/10 text-zinc-300">
+                                ช่อง #{unit.slot}
+                              </span>
+                              {unit.level ? (
+                                <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-red-500/20 border border-red-400/40 text-red-200">
+                                  Lv.{unit.level}
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="flex items-center justify-center py-2">
+                              <Shield className="w-9 h-9 text-red-400/90" />
+                            </div>
+                            <div>
+                              <div className="text-xs font-bold text-white truncate">{unit.name}</div>
+                              <div className="text-[11px] text-zinc-400">
+                                {unit.cost ? `ค่าลง ${unit.cost.toLocaleString()}¥` : 'Equipped Unit'}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/70 p-5 text-center space-y-1">
+                        <p className="text-xs text-zinc-300">
+                          ยังไม่มีข้อมูลทีมยูนิตจากบอทนี้ (รันสคริปต์เวอร์ชันล่าสุดเพื่อซิงค์ทีม 6 ตัว)
+                        </p>
+                      </div>
+                    )
+                  ) : activeItems.length > 0 ? (
                     <div
-                      key={`${rarityFilter}-${activeAccount.id}`}
+                      key={`${inventoryTab}-${rarityFilter}-${portalKind}-${portalTier}-${activeAccount.id}`}
                       className="grid grid-cols-2 sm:grid-cols-3 gap-3.5"
                     >
                       {activeItems.map((item, idx) => {
                         const style = getRarityStyle(item.rarity, item.name);
                         const icon = getItemIcon(item.name);
+                        const tierTag =
+                          item.tier || (item.name.match(/T(\d+)/i)?.[0]?.toUpperCase() ?? null);
                         return (
                           <div
                             key={`${item.name}-${idx}`}
                             style={{ animationDelay: `${Math.min(idx * 40, 280)}ms` }}
                             className={`rounded-2xl border p-4 flex flex-col justify-between min-h-[156px] transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.01] animate-fade-slide ${style.card}`}
                           >
-                            <div className="flex justify-end">
-                              <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-black/40 border border-white/10 text-zinc-100">
-                                x{item.amount}
-                              </span>
+                            <div className="flex items-center justify-between gap-2">
+                              {tierTag ? (
+                                <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-amber-500/20 border border-amber-400/40 text-amber-200">
+                                  {tierTag}
+                                </span>
+                              ) : (
+                                <span />
+                              )}
+                              <div className="flex items-center gap-1.5">
+                                {item.hearts ? (
+                                  <span className="inline-flex items-center gap-0.5 text-[11px] font-bold px-1.5 py-0.5 rounded-lg bg-rose-500/20 border border-rose-400/35 text-rose-200">
+                                    <Heart className="w-3 h-3 fill-rose-400 text-rose-400" />
+                                    {item.hearts}
+                                  </span>
+                                ) : null}
+                                <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-black/40 border border-white/10 text-zinc-100">
+                                  x{item.amount}
+                                </span>
+                              </div>
                             </div>
 
                             <div className="flex items-center justify-center py-2">
@@ -762,8 +998,15 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                               <div className="text-xs font-bold text-white truncate">
                                 {item.name}
                               </div>
-                              <div className={`text-[11px] font-medium ${style.text}`}>
-                                {style.label}
+                              <div className="flex items-center justify-between gap-2 mt-0.5">
+                                <span className={`text-[11px] font-medium ${style.text}`}>
+                                  {style.label}
+                                </span>
+                                {item.multiplier ? (
+                                  <span className="text-[10px] font-semibold text-emerald-300 truncate">
+                                    {item.multiplier}
+                                  </span>
+                                ) : null}
                               </div>
                             </div>
                           </div>
@@ -772,11 +1015,13 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                     </div>
                   ) : (
                     <div
-                      key={`empty-${rarityFilter}-${activeAccount.id}`}
+                      key={`empty-${inventoryTab}-${rarityFilter}-${activeAccount.id}`}
                       className="rounded-2xl border border-red-500/25 bg-[#13080b]/70 p-5 text-center space-y-1 animate-fade-slide"
                     >
                       <p className="text-xs text-zinc-300">
-                        ยังไม่มีรายการ Portal / Stat Cube จากบอทนี้ (ระบบจะซิงค์เมื่อเปิดกระเป๋า Items หรือจบ Dungeon Room)
+                        {inventoryTab === 'portals'
+                          ? 'ยังไม่มี Portal ที่ตรงกับเงื่อนไข (เปิดหน้า Items ใน Lobby เพื่อให้บอทซิงค์รายการพอร์ทัล)'
+                          : 'ยังไม่มีรายการไอเทมจากบอทนี้ (ระบบจะซิงค์เมื่อเปิดกระเป๋า Items หรือจบ Dungeon Room)'}
                       </p>
                     </div>
                   )}
