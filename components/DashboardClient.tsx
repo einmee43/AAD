@@ -1442,13 +1442,18 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                         className="p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-red-500/5 transition-colors"
                       >
                         <div className="flex items-start gap-3.5 min-w-0">
-                          {/* Stylized Map Thumbnail */}
-                          <div
-                            className={`relative w-28 sm:w-32 h-[68px] rounded-xl overflow-hidden shrink-0 border border-white/15 bg-gradient-to-br ${thumbGradient}`}
-                          >
-                            <div className="absolute -top-3 -right-3 w-12 h-12 rounded-full bg-white/15 blur-md" />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent" />
-                            <span className="absolute bottom-1.5 left-2 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/60 text-white/95 backdrop-blur-sm">
+                          {/* Real Map Thumbnail */}
+                          <div className="relative w-28 sm:w-32 h-[68px] rounded-xl overflow-hidden shrink-0 border border-white/15 bg-[#090506]">
+                            <img
+                              src="/maps/default.png"
+                              alt={log.map_name}
+                              className="w-full h-full object-cover"
+                            />
+                            <div
+                              className={`absolute inset-0 bg-gradient-to-br ${thumbGradient} opacity-40 mix-blend-color`}
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/15 to-transparent" />
+                            <span className="absolute bottom-1.5 left-2 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/70 text-white/95 backdrop-blur-sm">
                               {modeLabel}
                             </span>
                           </div>
