@@ -349,39 +349,27 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            <div className="flex rounded-xl border p-1 text-xs bg-[#160b0e] border-red-500/25">
+            <div className="flex items-center gap-1.5 rounded-full border p-1 text-xs bg-[#14090c]/90 border-red-500/25">
               <button
                 onClick={() => setTab('profile')}
-                className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer ${
-                  tab === 'profile'
-                    ? isKage
-                      ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white shadow-md shadow-red-500/25'
-                      : 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-500/25'
-                    : 'text-zinc-400 hover:text-white'
+                className={`px-4 py-1.5 font-semibold cursor-pointer ${
+                  tab === 'profile' ? 'btn-pill-primary' : 'btn-pill-dark'
                 }`}
               >
                 โปรไฟล์ &amp; คลัง
               </button>
               <button
                 onClick={() => setTab('history')}
-                className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer ${
-                  tab === 'history'
-                    ? isKage
-                      ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white shadow-md shadow-red-500/25'
-                      : 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-500/25'
-                    : 'text-zinc-400 hover:text-white'
+                className={`px-4 py-1.5 font-semibold cursor-pointer ${
+                  tab === 'history' ? 'btn-pill-primary' : 'btn-pill-dark'
                 }`}
               >
                 ประวัติดรอป
               </button>
               <button
                 onClick={() => setTab('keys')}
-                className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center gap-1.5 ${
-                  tab === 'keys'
-                    ? isKage
-                      ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white shadow-md shadow-red-500/25'
-                      : 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-500/25'
-                    : 'text-zinc-400 hover:text-white'
+                className={`px-4 py-1.5 font-semibold cursor-pointer flex items-center gap-1.5 ${
+                  tab === 'keys' ? 'btn-pill-primary' : 'btn-pill-dark'
                 }`}
               >
                 <KeyRound className="w-3.5 h-3.5" />
@@ -392,17 +380,17 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
             <button
               onClick={fetchDashboard}
               title="Refresh"
-              className="p-2 rounded-xl bg-[#15102b] border border-purple-500/25 text-purple-300 hover:text-white hover:border-purple-400/50 transition cursor-pointer"
+              className="p-2.5 btn-pill-dark cursor-pointer"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
 
-            <div className="flex items-center gap-2 pl-2 border-l border-purple-500/20">
+            <div className="flex items-center gap-2 pl-2 border-l border-red-500/20">
               {user.avatar && (
                 <img
                   src={user.avatar}
                   alt={user.name}
-                  className="w-7 h-7 rounded-full border border-purple-400/50"
+                  className="w-7 h-7 rounded-full border border-red-400/50"
                 />
               )}
               <span className="text-xs font-medium hidden md:inline text-purple-100">
@@ -432,10 +420,10 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              <div key={activeAccount.id} className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start animate-fade-slide">
                 {/* LEFT COLUMN: Profile Card */}
                 <section
-                  className={`lg:col-span-4 rounded-2xl border p-5 relative overflow-hidden ${
+                  className={`lg:col-span-4 rounded-2xl border p-5 relative overflow-hidden transition-all duration-300 ${
                     isKage
                       ? 'border-red-500/35 bg-gradient-to-b from-[#1a0b0f]/92 via-[#11080a]/92 to-[#0b0607]/95 shadow-[0_0_40px_rgba(220,38,38,0.16)]'
                       : 'border-purple-500/35 bg-gradient-to-b from-[#171130]/95 via-[#110c24]/95 to-[#0d091c]/95 shadow-[0_0_40px_rgba(139,92,246,0.15)]'
@@ -495,37 +483,21 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                         isKage ? 'bg-red-600/20' : 'bg-purple-600/20'
                       }`}
                     />
-                    <div className="relative z-10 h-44 flex items-center justify-center">
+                    <div className="relative z-10 h-48 flex items-center justify-center animate-float-slow">
                       {activeAccount.roblox_user_id && avatarCache[activeAccount.roblox_user_id] ? (
                         <img
                           src={avatarCache[activeAccount.roblox_user_id]}
                           alt={activeAccount.roblox_username || activeAccount.bot_name}
-                          className={`h-44 w-44 object-contain ${
-                            isKage
-                              ? 'drop-shadow-[0_0_22px_rgba(220,38,38,0.5)]'
-                              : 'drop-shadow-[0_0_20px_rgba(168,85,247,0.45)]'
-                          }`}
+                          className="h-48 w-48 object-contain drop-shadow-[0_0_24px_rgba(220,38,38,0.55)]"
                         />
                       ) : (
-                        <div
-                          className={`w-28 h-28 rounded-full border flex items-center justify-center ${
-                            isKage
-                              ? 'border-red-500/40 bg-red-950/50 text-red-300'
-                              : 'border-purple-500/40 bg-purple-950/50 text-purple-300'
-                          }`}
-                        >
+                        <div className="w-28 h-28 rounded-full border border-red-500/40 bg-red-950/50 flex items-center justify-center text-red-300">
                           <Bot className="w-12 h-12" />
                         </div>
                       )}
                     </div>
                     {/* Glowing Pedestal Ring */}
-                    <div
-                      className={`w-44 h-5 -mt-3 rounded-[100%] border-2 ${
-                        isKage
-                          ? 'border-red-500/65 bg-red-500/20 shadow-[0_0_25px_rgba(220,38,38,0.65)]'
-                          : 'border-purple-400/60 bg-purple-500/20 shadow-[0_0_25px_rgba(168,85,247,0.6)]'
-                      }`}
-                    />
+                    <div className="w-44 h-5 -mt-3 rounded-[100%] border-2 border-red-500/70 bg-red-500/20 animate-pedestal" />
                   </div>
 
                   {/* Bot Switcher + Level Badge */}
@@ -535,33 +507,19 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                         setSelectedIdx((i) => (i - 1 + accounts.length) % accounts.length)
                       }
                       disabled={accounts.length <= 1}
-                      className={`p-1.5 rounded-lg border disabled:opacity-30 cursor-pointer ${
-                        isKage
-                          ? 'border-red-500/30 bg-[#1f0d12] text-red-300 hover:text-white'
-                          : 'border-purple-500/30 bg-[#1a1336] text-purple-300 hover:text-white'
-                      }`}
+                      className="p-2 btn-pill-dark disabled:opacity-30 cursor-pointer"
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
 
-                    <div
-                      className={`px-5 py-1 rounded-xl border text-sm font-bold tracking-wider ${
-                        isKage
-                          ? 'border-red-500/50 bg-[#260e14] shadow-[0_0_15px_rgba(220,38,38,0.28)]'
-                          : 'border-purple-400/50 bg-[#1e163d] shadow-[0_0_15px_rgba(168,85,247,0.25)]'
-                      }`}
-                    >
+                    <div className="px-6 py-1.5 rounded-full border border-red-500/50 bg-[#260e14] text-sm font-bold tracking-wider shadow-[0_0_18px_rgba(220,38,38,0.3)]">
                       {level > 0 ? `LV. ${level}` : activeAccount.bot_name}
                     </div>
 
                     <button
                       onClick={() => setSelectedIdx((i) => (i + 1) % accounts.length)}
                       disabled={accounts.length <= 1}
-                      className={`p-1.5 rounded-lg border disabled:opacity-30 cursor-pointer ${
-                        isKage
-                          ? 'border-red-500/30 bg-[#1f0d12] text-red-300 hover:text-white'
-                          : 'border-purple-500/30 bg-[#1a1336] text-purple-300 hover:text-white'
-                      }`}
+                      className="p-2 btn-pill-dark disabled:opacity-30 cursor-pointer"
                     >
                       <ChevronRight className="w-4 h-4" />
                     </button>
@@ -734,19 +692,13 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
 
                   {/* Top Rarity Tabs & Filter */}
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3">
-                    <div className="flex flex-wrap items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
                       {(['ALL', 'Secret', 'Mythic', 'Legendary'] as const).map((r) => (
                         <button
                           key={r}
                           onClick={() => setRarityFilter(r)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
-                            rarityFilter === r
-                              ? r === 'Secret'
-                                ? 'bg-rose-500/25 border-rose-500/60 text-rose-200'
-                                : r === 'Legendary'
-                                ? 'bg-amber-500/25 border-amber-500/60 text-amber-200'
-                                : 'bg-red-600/30 border-red-400/60 text-white'
-                              : 'bg-[#0b0608] border-red-500/15 text-zinc-400 hover:text-white'
+                          className={`px-4 py-1.5 text-xs font-semibold cursor-pointer ${
+                            rarityFilter === r ? 'btn-pill-primary' : 'btn-pill-dark'
                           }`}
                         >
                           {r === 'ALL' ? 'ทั้งหมด' : r}
@@ -881,7 +833,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
         )}
 
         {tab === 'history' && (
-          <div className="space-y-5">
+          <div className="space-y-5 animate-fade-slide">
             {/* Timeframe + Clear */}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
@@ -889,10 +841,8 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                   <button
                     key={h}
                     onClick={() => setHours(h)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition cursor-pointer ${
-                      hours === h
-                        ? 'bg-purple-600/30 border-purple-400/60 text-white'
-                        : 'bg-[#120e24] border-purple-500/20 text-zinc-400 hover:text-white'
+                    className={`px-4 py-1.5 text-xs font-semibold cursor-pointer ${
+                      hours === h ? 'btn-pill-primary' : 'btn-pill-dark'
                     }`}
                   >
                     {h === 1 ? '1 ชม. ล่าสุด' : h === 24 ? '24 ชม. ล่าสุด' : '7 วันล่าสุด'}
@@ -901,7 +851,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
               </div>
               <button
                 onClick={handleClearLogs}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-rose-500/10 border border-rose-500/30 text-rose-300 hover:bg-rose-500/20 transition cursor-pointer"
+                className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold btn-pill-dark text-rose-300 cursor-pointer"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 ล้างประวัติ
@@ -1131,7 +1081,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                 </div>
                 <button
                   type="submit"
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-sm font-medium text-white transition cursor-pointer"
+                  className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold btn-pill-primary cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
                   Create API Key
