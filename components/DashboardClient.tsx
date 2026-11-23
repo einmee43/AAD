@@ -95,6 +95,31 @@ function getTraitIcon(trait?: string | null): string | null {
   return null;
 }
 
+function getUnitFrameBorder(name: string): string {
+  const n = name.toLowerCase();
+  if (
+    n.includes('elyssia') ||
+    n.includes('alucard') ||
+    n.includes('ainz') ||
+    n.includes('dazai') ||
+    n.includes('roger') ||
+    n.includes('homura') ||
+    n.includes('secret')
+  ) {
+    return 'p-[2px] bg-gradient-to-br from-cyan-400 via-fuchsia-500 to-amber-300 shadow-[0_0_14px_rgba(34,211,238,0.35)]';
+  }
+  if (
+    n.includes('windsong') ||
+    n.includes('bulby') ||
+    n.includes('erwin') ||
+    n.includes('speedwagon') ||
+    n.includes('orwin')
+  ) {
+    return 'p-[2px] bg-gradient-to-b from-amber-300 via-amber-500 to-yellow-700 shadow-[0_0_12px_rgba(245,158,11,0.28)]';
+  }
+  return 'p-[2px] bg-gradient-to-b from-purple-400 via-purple-600 to-indigo-800 shadow-[0_0_12px_rgba(168,85,247,0.28)]';
+}
+
 interface RunLog {
   id: string;
   bot_name: string;
@@ -945,11 +970,14 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                      {/* 6 Equipped Unit Slots (uniform 64x64) */}
+                      {/* 6 Equipped Unit Slots (in-game AA bar style, uniform 80x80) */}
                       {[1, 2, 3, 4, 5, 6].map((slotNum) => {
                         const unit = activeTeam.find((u) => u.slot === slotNum);
                         const unitImg = unit ? unitIconCache[unit.name] : '';
                         const traitImg = unit ? getTraitIcon(unit.trait) : null;
+                        const frameClass = unit
+                          ? getUnitFrameBorder(unit.name)
+                          : 'border border-white/10 bg-black/30 opacity-45';
                         return (
                           <div
                             key={slotNum}
@@ -960,56 +988,57 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                                   }`
                                 : `ช่องที่ ${slotNum} ว่าง`
                             }
-                            className={`relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl border overflow-hidden flex items-center justify-center shrink-0 transition-all ${
-                              unit
-                                ? 'border-red-500/45 bg-gradient-to-b from-red-950/60 to-[#0d0507] shadow-[0_0_12px_rgba(220,38,38,0.2)]'
-                                : 'border-white/10 bg-black/30 opacity-45'
-                            }`}
+                            className={`w-[74px] h-[74px] sm:w-20 sm:h-20 rounded-xl shrink-0 transition-transform hover:-translate-y-0.5 ${frameClass}`}
                           >
-                            {unit ? (
-                              <>
-                                {unitImg ? (
-                                  <img
-                                    src={unitImg}
-                                    alt={unit.name}
-                                    className="w-full h-full object-cover"
-                                  />
-                                ) : (
-                                  <Shield className="w-6 h-6 text-red-400/80" />
-                                )}
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-black/30 pointer-events-none" />
-                                <span className="absolute top-1 left-1 text-[9px] font-bold text-zinc-300 leading-none">
-                                  #{slotNum}
-                                </span>
-                                {traitImg && (
-                                  <span className="absolute top-1 right-1 w-4 h-4 rounded-md bg-black/65 border border-white/10 flex items-center justify-center p-0.5 shadow">
+                            <div className="relative w-full h-full rounded-[10px] overflow-hidden bg-[#0e0b16] flex items-center justify-center">
+                              {unit ? (
+                                <>
+                                  {unitImg ? (
+                                    <img
+                                      src={unitImg}
+                                      alt={unit.name}
+                                      className="w-full h-full object-cover object-top scale-110"
+                                    />
+                                  ) : (
+                                    <Shield className="w-6 h-6 text-purple-300/80" />
+                                  )}
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/15 to-black/45 pointer-events-none" />
+                                  {unit.level ? (
+                                    <span className="absolute top-1 left-1.5 text-[10px] font-extrabold text-white leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.95)]">
+                                      Lv. {unit.level}
+                                    </span>
+                                  ) : null}
+                                  {traitImg && (
                                     <img
                                       src={traitImg}
                                       alt={unit.trait || 'trait'}
-                                      className="w-full h-full object-contain"
+                                      className="absolute top-5 left-1.5 w-4 h-4 object-contain drop-shadow-[0_1px_3px_rgba(0,0,0,0.95)]"
                                     />
+                                  )}
+                                  {unit.cost ? (
+                                    <span className="absolute bottom-3.5 right-1.5 text-[10px] font-extrabold text-amber-300 leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.95)]">
+                                      {unit.cost} ¥
+                                    </span>
+                                  ) : null}
+                                  <span className="absolute bottom-0.5 inset-x-1 text-center text-[9px] font-bold text-white truncate leading-tight drop-shadow-[0_1px_2px_rgba(0,0,0,1)]">
+                                    {unit.name}
                                   </span>
-                                )}
-                                {unit.level ? (
-                                  <span className="absolute bottom-1 inset-x-1 text-center text-[10px] font-bold text-white leading-none drop-shadow">
-                                    Lv.{unit.level}
-                                  </span>
-                                ) : null}
-                              </>
-                            ) : (
-                              <span className="text-[10px] text-zinc-500">ว่าง</span>
-                            )}
+                                </>
+                              ) : (
+                                <span className="text-[10px] text-zinc-500">ว่าง</span>
+                              )}
+                            </div>
                           </div>
                         );
                       })}
 
-                      {/* Live Wave Badge (exact same 64x64 size as unit slots) */}
-                      <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl border border-red-500/35 bg-[#0b0406] flex flex-col items-center justify-center shrink-0 text-center">
+                      {/* Live Wave Badge (exact same 80x80 size as unit slots) */}
+                      <div className="w-[74px] h-[74px] sm:w-20 sm:h-20 rounded-xl border border-red-500/35 bg-[#0b0406] flex flex-col items-center justify-center shrink-0 text-center">
                         <div className="flex items-center justify-center gap-0.5 text-[10px] text-red-300/80 leading-none">
                           <Waves className="w-3 h-3" />
                           <span>เวฟ</span>
                         </div>
-                        <div className="text-lg font-bold text-white leading-tight mt-0.5">
+                        <div className="text-xl font-bold text-white leading-tight mt-0.5">
                           {activeAccount.current_wave && activeAccount.current_wave !== '-'
                             ? activeAccount.current_wave.replace(/Wave\s*/i, '')
                             : '-'}
