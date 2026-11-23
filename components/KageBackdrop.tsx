@@ -32,7 +32,7 @@ export default function KageBackdrop() {
 
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setClearColor(0x070506, 1);
+    renderer.setClearColor(0x070506, 0);
     container.appendChild(renderer.domElement);
 
     // Subtle crimson moon / shrine halo behind the UI
@@ -167,10 +167,14 @@ export default function KageBackdrop() {
   }, []);
 
   return (
-    <div
-      ref={containerRef}
-      aria-hidden="true"
-      className="pointer-events-none fixed inset-0 z-0"
-    />
+    <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0 overflow-hidden bg-[#070506]">
+      <img
+        src="/themes/kage-temple.jpg"
+        alt=""
+        className="absolute inset-0 w-full h-full object-cover opacity-35 scale-105"
+      />
+      <div className="absolute inset-0 bg-gradient-to-b from-[#070506]/70 via-[#070506]/45 to-[#070506]/90" />
+      <div ref={containerRef} className="absolute inset-0" />
+    </div>
   );
 }
