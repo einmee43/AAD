@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { Bot, Rotate3d } from 'lucide-react';
+import { Bot } from 'lucide-react';
 
 type Avatar3DPayload = {
   available: boolean;
@@ -80,7 +80,7 @@ export default function AvatarStage3D({
       renderer.setSize(width, height);
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.08;
+      renderer.toneMappingExposure = 1.32;
 
       container.innerHTML = '';
       container.appendChild(renderer.domElement);
@@ -89,23 +89,27 @@ export default function AvatarStage3D({
       renderer.domElement.style.display = 'block';
       renderer.domElement.style.cursor = 'grab';
 
-      // Studio 3-Point Lighting (Kage crimson rim + crisp neutral key)
-      const hemi = new THREE.HemisphereLight(0xffe9ec, 0x1a080c, 1.25);
+      // Bright Studio Lighting (clear face/outfit visibility + Kage crimson rim)
+      const hemi = new THREE.HemisphereLight(0xffffff, 0x4b1d24, 2.35);
       scene.add(hemi);
 
-      const keyLight = new THREE.DirectionalLight(0xfff5f5, 2.1);
+      const frontFill = new THREE.DirectionalLight(0xffffff, 2.3);
+      frontFill.position.set(0, 3.6, 9.5);
+      scene.add(frontFill);
+
+      const keyLight = new THREE.DirectionalLight(0xfff7f7, 2.4);
       keyLight.position.set(4.5, 8, 6.5);
       scene.add(keyLight);
 
-      const fillLight = new THREE.DirectionalLight(0xdbeafe, 0.7);
-      fillLight.position.set(-5, 4, 4);
+      const fillLight = new THREE.DirectionalLight(0xe0e7ff, 1.35);
+      fillLight.position.set(-5, 4.5, 5);
       scene.add(fillLight);
 
-      const rimLight = new THREE.PointLight(0xef4444, 5.5, 16);
+      const rimLight = new THREE.PointLight(0xef4444, 5.0, 16);
       rimLight.position.set(-3.2, 3.8, -4.5);
       scene.add(rimLight);
 
-      const underGlow = new THREE.PointLight(0xdc2626, 3.2, 8);
+      const underGlow = new THREE.PointLight(0xdc2626, 2.8, 8);
       underGlow.position.set(0, -0.3, 2.2);
       scene.add(underGlow);
 
@@ -376,14 +380,6 @@ export default function AvatarStage3D({
               <Bot className="w-12 h-12" />
             </div>
           )}
-        </div>
-      )}
-
-      {/* Hint badge */}
-      {status === 'ready3d' && (
-        <div className="absolute bottom-2.5 right-2.5 z-20 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-black/55 border border-red-500/25 text-red-200/80 backdrop-blur-sm pointer-events-none">
-          <Rotate3d className="w-3 h-3 text-red-400" />
-          3D ลากหมุนได้
         </div>
       )}
     </div>
