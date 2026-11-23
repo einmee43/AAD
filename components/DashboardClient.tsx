@@ -6,8 +6,10 @@ import KageBackdrop from '@/components/KageBackdrop';
 import NextyLogo from '@/components/NextyLogo';
 import AvatarStage3D from '@/components/AvatarStage3D';
 import unitRarities from '@/lib/unitRarities.json';
+import itemIcons from '@/lib/itemIcons.json';
 
 const unitRarityMap = unitRarities as Record<string, string>;
+const localItemIconMap = itemIcons as Record<string, string>;
 import {
   Activity,
   Bell,
@@ -195,7 +197,8 @@ function isJunkReward(name: string): boolean {
 }
 
 function getItemIcon(name: string): string | null {
-  const n = name.toLowerCase();
+  const n = name.trim().toLowerCase();
+  if (localItemIconMap[n]) return localItemIconMap[n];
   if (n.includes('dawn')) return '/icons/dawn_coin.jpg';
   if (n.includes('gem')) return '/icons/gems.png';
   if (n.includes('gold') || n.includes('coin') || n.includes('yen')) return '/icons/gold.png';
@@ -206,6 +209,9 @@ function getItemIcon(name: string): string | null {
   if (n.includes('portal') && (n.includes('secret') || n.includes('explosion') || n.includes('demon')))
     return '/icons/portal_secret.png';
   if (n.includes('portal')) return '/icons/portal_mythic.png';
+  for (const [k, url] of Object.entries(localItemIconMap)) {
+    if (k.length >= 5 && (n.includes(k) || k.includes(n))) return url;
+  }
   return null;
 }
 
@@ -1316,7 +1322,11 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                                 <img
                                   src={icon}
                                   alt={item.name}
-                                  className="w-16 h-16 object-contain drop-shadow-[0_0_12px_rgba(220,38,38,0.4)]"
+                                  className={`w-16 h-16 drop-shadow-[0_0_12px_rgba(220,38,38,0.4)] ${
+                                    icon.includes('dawn_coin')
+                                      ? 'rounded-full object-cover'
+                                      : 'rounded-xl object-contain'
+                                  }`}
                                 />
                               ) : (
                                 <Sparkles className={`w-10 h-10 ${style.text}`} />
