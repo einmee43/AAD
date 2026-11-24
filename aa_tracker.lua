@@ -151,6 +151,7 @@ local cachedGcPortals = {}
 local cachedGcItems = {}
 local cachedGcUnits = {}
 local cachedTraitRerolls = nil
+local cachedProfileCur = {}
 local lastGcScanAt = 0
 local lastGcComplete = false
 local cachedUnitDefs = nil
@@ -544,11 +545,31 @@ local function scanGcFullInventoryIfDue(force)
             return a.name < b.name
         end)
 
+        local profileCur = {}
+        if type(profileTable) == "table" then
+            local pg = tonumber(rawget(profileTable, "gem_amount"))
+            local pgo = tonumber(rawget(profileTable, "gold_amount"))
+            if pg then profileCur["Gems"] = pg end
+            if pgo then profileCur["Gold"] = pgo end
+            local resTbl = rawget(profileTable, "resources")
+            if type(resTbl) == "table" then
+                for rk, rv in pairs(resTbl) do
+                    local num = tonumber(rv)
+                    if type(rk) == "string" and num then
+                        if rk == "SummerPearls" then profileCur["Summer Pearls"] = num
+                        elseif rk == "AprilCoins" then profileCur["Dawn Coins"] = num
+                        else profileCur[rk] = num end
+                    end
+                end
+            end
+        end
+
         return {
             portals = portalsMap,
             items = itemsMap,
             units = unitsList,
             traitRerolls = profileTable and tonumber(rawget(profileTable, "trait_reroll_tokens")) or nil,
+            profileCur = profileCur,
             complete = (type(normalContainer) == "table" and next(itemsMap) ~= nil),
         }
     end)
@@ -558,12 +579,16 @@ local function scanGcFullInventoryIfDue(force)
         if next(result.items) ~= nil then cachedGcItems = result.items end
         if #result.units > 0 then cachedGcUnits = result.units end
         if result.traitRerolls ~= nil then cachedTraitRerolls = result.traitRerolls end
+        if type(result.profileCur) == "table" and next(result.profileCur) ~= nil then
+            cachedProfileCur = result.profileCur
+        end
         lastGcComplete = result.complete == true
         return {
             portals = cachedGcPortals,
             items = cachedGcItems,
             units = cachedGcUnits,
             traitRerolls = cachedTraitRerolls,
+            profileCur = cachedProfileCur,
             complete = lastGcComplete,
         }
     end
@@ -821,6 +846,14 @@ local matchBaseline = {
 local function captureMatchBaseline(forceScan)
     local cur, ready = readCurrencies()
     local gcRes = scanGcFullInventoryIfDue(forceScan == true)
+    if gcRes and type(gcRes.profileCur) == "table" then
+        for k, v in pairs(gcRes.profileCur) do
+            if cur[k] == nil or (cur[k] == 0 and v > 0) then
+                cur[k] = v
+                ready = true
+            end
+        end
+    end
     if gcRes and type(gcRes.items) == "table" then
         for _, it in pairs(gcRes.items) do
             if it.name and it.name:lower():find("dawn coin") then
@@ -1004,6 +1037,14 @@ task.spawn(function()
                 local _, mode, mapName, _ = detectState()
                 local endCurrencies, endReady = readCurrencies()
                 local endGc = scanGcFullInventoryIfDue(true)
+                if endGc and type(endGc.profileCur) == "table" then
+                    for k, v in pairs(endGc.profileCur) do
+                        if endCurrencies[k] == nil or (endCurrencies[k] == 0 and v > 0) then
+                            endCurrencies[k] = v
+                            endReady = true
+                        end
+                    end
+                end
                 local endItemsList = nil
                 if endGc then
                     endItemsList = {}

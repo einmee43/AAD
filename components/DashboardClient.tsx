@@ -2458,7 +2458,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                               {log.mode} • {formatDuration(log.duration_sec)}
                             </div>
 
-                            {cleanRewards.length > 0 && (
+                            {cleanRewards.length > 0 ? (
                               <div className="flex flex-wrap gap-1.5 pt-1">
                                 {cleanRewards.map((r, idx) => {
                                   const icon = getRewardIcon(r);
@@ -2483,6 +2483,12 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                                     </span>
                                   );
                                 })}
+                              </div>
+                            ) : (
+                              <div className="pt-1">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/[0.03] border border-white/10 text-[11px] text-zinc-400">
+                                  ไม่มีข้อมูลของดรอปเพิ่มในรอบนี้
+                                </span>
                               </div>
                             )}
                           </div>
