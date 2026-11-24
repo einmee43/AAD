@@ -334,16 +334,44 @@ function timeAgo(iso: string) {
   return `${Math.floor(diff / 3600)} ชม. ที่แล้ว`;
 }
 
-function isJunkReward(name: string): boolean {
-  const n = (name || '').toLowerCase();
-  return (
+function isJunkReward(nameOrItem: string | { name: string; category?: string }): boolean {
+  const name = typeof nameOrItem === 'string' ? nameOrItem : nameOrItem?.name || '';
+  const cat = typeof nameOrItem === 'string' ? '' : (nameOrItem?.category || '').toLowerCase();
+  const n = name.trim().toLowerCase();
+  if (!n) return true;
+  if (
     n.includes('victory') ||
     n.includes('defeat') ||
     n.includes('first completion') ||
     n === 'score:' ||
     n === 'high score:' ||
-    n.includes('xp progress')
-  );
+    n.includes('xp progress') ||
+    /\b(xp|exp)\b/i.test(n) ||
+    n.endsWith(' xp') ||
+    n.endsWith(' exp') ||
+    n.includes('unit exp') ||
+    n.includes('unit xp') ||
+    n.includes('player xp') ||
+    n.includes('player exp') ||
+    n.includes('character xp') ||
+    n.includes('character exp') ||
+    n.includes('battle pass xp') ||
+    n.includes('takedown')
+  ) {
+    return true;
+  }
+  // Old ResultsUI scrapes mistook equipped Unit EXP cards (category !== 'unit') for item drops
+  if (
+    cat !== 'unit' &&
+    cat !== 'skin' &&
+    cat !== 'portal' &&
+    !localItemIconMap[n] &&
+    !n.includes('portal') &&
+    (unitRarityMap[n] !== undefined || localUnitPortraitMap[n] !== undefined)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function getItemIcon(name: string): string | null {
@@ -579,7 +607,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
 
     freshLogs.forEach((l) => seenLogIdsRef.current.add(l.id));
     const newAlerts: WebAlert[] = freshLogs.map((l) => {
-      const cleanRewards = (l.rewards || []).filter((r) => !isJunkReward(r.name));
+      const cleanRewards = (l.rewards || []).filter((r) => !isJunkReward(r));
       const isRare = cleanRewards.some((r) => {
         const rr = (r.rarity || '').toLowerCase();
         const rn = r.name.toLowerCase();
@@ -933,7 +961,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
     const lootTotals: Record<string, { amount: number; category?: string; rarity?: string }> = {};
     for (const log of logs) {
       for (const r of log.rewards || []) {
-        if (isJunkReward(r.name)) continue;
+        if (isJunkReward(r)) continue;
         const prev = lootTotals[r.name];
         const amt = Number(r.amount) || 0;
         if (!prev) {
@@ -984,7 +1012,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
     for (const log of sourceLogs) {
       const seenThisRun = new Set<string>();
       for (const r of log.rewards || []) {
-        if (isJunkReward(r.name)) continue;
+        if (isJunkReward(r)) continue;
         const amt = Number(r.amount) || 0;
         if (amt <= 0) continue;
         const key = r.name.toLowerCase();
@@ -1026,7 +1054,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
     for (const log of filteredLogs) {
       const seen = new Set<string>();
       for (const r of log.rewards || []) {
-        if (isJunkReward(r.name)) continue;
+        if (isJunkReward(r)) continue;
         const amt = Number(r.amount) || 0;
         if (amt <= 0) continue;
         const key = r.name.toLowerCase();
@@ -2212,7 +2240,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                             </span>
                           </div>
                           <div className="flex flex-wrap items-center gap-1.5">
-                            {(log.rewards || []).filter((r) => !isJunkReward(r.name)).map((r, i) => {
+                            {(log.rewards || []).filter((r) => !isJunkReward(r)).map((r, i) => {
                               const icon = getRewardIcon(r);
                               const st = getRarityStyle(r.rarity, r.name);
                               return (
@@ -2440,7 +2468,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                       d.getMonth() + 1
                     ).padStart(2, '0')}`;
 
-                    const cleanRewards = (log.rewards || []).filter((r) => !isJunkReward(r.name));
+                    const cleanRewards = (log.rewards || []).filter((r) => !isJunkReward(r));
 
                     return (
                       <div

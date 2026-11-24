@@ -208,7 +208,22 @@ export async function POST(request: Request) {
 
     // Insert run_log on run_complete
     if (eventType === 'run_complete') {
-      const rewards: RewardItem[] = Array.isArray(body.rewards) ? body.rewards : [];
+      const rawRewards: RewardItem[] = Array.isArray(body.rewards) ? body.rewards : [];
+      const rewards = rawRewards.filter((r) => {
+        const n = String(r?.name || '').trim().toLowerCase();
+        if (!n) return false;
+        if (
+          /\b(xp|exp)\b/i.test(n) ||
+          n.includes('xp progress') ||
+          n.includes('unit exp') ||
+          n.includes('unit xp') ||
+          n.includes('player xp') ||
+          n.includes('player exp')
+        ) {
+          return false;
+        }
+        return true;
+      });
       const mode = String(body.mode || 'Dungeon').slice(0, 64);
       const mapName = String(body.map_name || 'Unknown').slice(0, 128);
       const result = body.result === 'Lose' ? 'Lose' : 'Win';

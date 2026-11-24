@@ -1162,8 +1162,20 @@ task.spawn(function()
                     end
                 end
 
-                -- Scan ResultsUI labels for Win/Lose, LevelName, and any UI-only drops
+                -- Scan ResultsUI labels for Win/Lose, LevelName, and genuine UI-only item drops (skip Unit EXP cards)
                 local resultStatus = "Win"
+                local unitDefsForSkip = getUnitDefs()
+                local knownUnitNames = {}
+                for _, def in pairs(unitDefsForSkip) do
+                    if type(def) == "table" and type(def.name) == "string" then
+                        knownUnitNames[def.name:lower()] = true
+                    end
+                end
+                local equippedNamesLower = {}
+                for _, eq in ipairs(readEquippedTeam()) do
+                    if eq.name then equippedNamesLower[tostring(eq.name):lower()] = true end
+                end
+
                 for _, obj in ipairs(resultsUI:GetDescendants()) do
                     if obj:IsA("TextLabel") and obj.Visible and #obj.Text > 0 then
                         local txt = obj.Text
@@ -1182,28 +1194,39 @@ task.spawn(function()
                             end
                         end
                     elseif obj:IsA("Frame") or obj:IsA("ImageButton") or obj:IsA("ImageLabel") then
-                        -- Only treat as an item drop if it has an explicit item name + quantity label
-                        local nLbl = obj:FindFirstChild("name", true) or obj:FindFirstChild("ItemName", true)
-                        local qLbl = obj:FindFirstChild("Amount", true) or obj:FindFirstChild("Quantity", true) or obj:FindFirstChild("RewardQuantity", true) or obj:FindFirstChild("Count", true)
-                        if nLbl and qLbl and nLbl:IsA("TextLabel") and qLbl:IsA("TextLabel") and #nLbl.Text > 0 and nLbl.Visible then
-                            local itemName = nLbl.Text
-                            local lowName = itemName:lower()
-                            local isJunk = lowName:find("victory") or lowName:find("defeat") or lowName:find("score")
-                                or lowName:find("first completion") or lowName:find("placeholder") or lowName:find("xp")
-                                or lowName:find("bonus") or lowName:find("wave") or lowName:find("time")
-                            if not isJunk and not seenRewardNames[lowName] then
-                                local amt = tonumber((qLbl.Text:gsub("[^%d]", "")))
-                                if amt and amt > 0 then
-                                    local rarity = "Mythic"
-                                    if lowName:find("secret") or lowName:find("portal") then rarity = "Secret"
-                                    elseif lowName:find("reroll") or lowName:find("chest") then rarity = "Legendary" end
-                                    seenRewardNames[lowName] = true
-                                    table.insert(rewards, {
-                                        name = itemName,
-                                        amount = amt,
-                                        category = "item",
-                                        rarity = rarity
-                                    })
+                        local fullLow = obj:GetFullName():lower()
+                        local isUnitExpContainer = fullLow:find("units") or fullLow:find("unitframe") or fullLow:find("character") or fullLow:find("xpbar")
+                        if not isUnitExpContainer then
+                            -- Only treat as an item drop if it has an explicit item name + quantity label
+                            local nLbl = obj:FindFirstChild("name", true) or obj:FindFirstChild("ItemName", true)
+                            local qLbl = obj:FindFirstChild("Amount", true) or obj:FindFirstChild("Quantity", true) or obj:FindFirstChild("RewardQuantity", true) or obj:FindFirstChild("Count", true)
+                            if nLbl and qLbl and nLbl:IsA("TextLabel") and qLbl:IsA("TextLabel") and #nLbl.Text > 0 and nLbl.Visible then
+                                local itemName = nLbl.Text
+                                local lowName = itemName:lower():match("^%s*(.-)%s*$")
+                                local qtyLow = qLbl.Text:lower()
+                                local isExpText = qtyLow:find("xp") or qtyLow:find("exp") or qtyLow:find("lv") or qtyLow:find("/")
+                                local isUnitCard = knownUnitNames[lowName] or equippedNamesLower[lowName]
+                                local isJunk = isExpText or isUnitCard
+                                    or lowName:find("victory") or lowName:find("defeat") or lowName:find("score")
+                                    or lowName:find("first completion") or lowName:find("placeholder")
+                                    or lowName:find("xp") or lowName:find("exp")
+                                    or lowName:find("bonus") or lowName:find("wave") or lowName:find("time")
+                                    or lowName:find("damage") or lowName:find("takedown") or lowName:find("kill")
+                                    or lowName:find("level")
+                                if not isJunk and not seenRewardNames[lowName] then
+                                    local amt = tonumber((qLbl.Text:gsub("[^%d]", "")))
+                                    if amt and amt > 0 then
+                                        local rarity = "Mythic"
+                                        if lowName:find("secret") or lowName:find("portal") then rarity = "Secret"
+                                        elseif lowName:find("reroll") or lowName:find("chest") then rarity = "Legendary" end
+                                        seenRewardNames[lowName] = true
+                                        table.insert(rewards, {
+                                            name = itemName,
+                                            amount = amt,
+                                            category = "item",
+                                            rarity = rarity
+                                        })
+                                    end
                                 end
                             end
                         end
