@@ -20,15 +20,42 @@ interface AvatarStage3DProps {
   robloxUserId?: number | null;
   fallbackAvatarUrl?: string | null;
   alt: string;
+  theme?: 'kage' | 'mono';
 }
 
 export default function AvatarStage3D({
   robloxUserId,
   fallbackAvatarUrl,
   alt,
+  theme = 'kage',
 }: AvatarStage3DProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready3d' | 'fallback'>('loading');
+  const podiumColorRefs = useRef<{
+    rimLight?: THREE.PointLight;
+    underGlow?: THREE.PointLight;
+    bodyMat?: THREE.MeshStandardMaterial;
+    rimBaseMat?: THREE.MeshStandardMaterial;
+    topPlateMat?: THREE.MeshStandardMaterial;
+    outerNeonMat?: THREE.MeshBasicMaterial;
+    midRingMat?: THREE.MeshBasicMaterial;
+    innerRingMat?: THREE.MeshBasicMaterial;
+  }>({});
+  const themeRef = useRef(theme);
+
+  useEffect(() => {
+    themeRef.current = theme;
+    const c = podiumColorRefs.current;
+    const mono = theme === 'mono';
+    c.rimLight?.color.setHex(mono ? 0xe4e4e7 : 0xef4444);
+    c.underGlow?.color.setHex(mono ? 0xa1a1aa : 0xdc2626);
+    c.bodyMat?.color.setHex(mono ? 0x111114 : 0x160a0e);
+    c.rimBaseMat?.color.setHex(mono ? 0x202026 : 0x2a0c13);
+    c.topPlateMat?.color.setHex(mono ? 0x0b0b0e : 0x11070a);
+    c.outerNeonMat?.color.setHex(mono ? 0xf4f4f5 : 0xf87171);
+    c.midRingMat?.color.setHex(mono ? 0xd4d4d8 : 0xef4444);
+    c.innerRingMat?.color.setHex(mono ? 0xa1a1aa : 0xfca5a5);
+  }, [theme]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -105,11 +132,12 @@ export default function AvatarStage3D({
       fillLight.position.set(-5, 4.5, 5);
       scene.add(fillLight);
 
-      const rimLight = new THREE.PointLight(0xef4444, 5.0, 16);
+      const monoInit = themeRef.current === 'mono';
+      const rimLight = new THREE.PointLight(monoInit ? 0xe4e4e7 : 0xef4444, 5.0, 16);
       rimLight.position.set(-3.2, 3.8, -4.5);
       scene.add(rimLight);
 
-      const underGlow = new THREE.PointLight(0xdc2626, 2.8, 8);
+      const underGlow = new THREE.PointLight(monoInit ? 0xa1a1aa : 0xdc2626, 2.8, 8);
       underGlow.position.set(0, -0.3, 2.2);
       scene.add(underGlow);
 
@@ -118,7 +146,7 @@ export default function AvatarStage3D({
 
       const bodyGeo = new THREE.CylinderGeometry(2.15, 2.38, 0.42, 64);
       const bodyMat = new THREE.MeshStandardMaterial({
-        color: 0x160a0e,
+        color: monoInit ? 0x111114 : 0x160a0e,
         metalness: 0.72,
         roughness: 0.35,
       });
@@ -128,7 +156,7 @@ export default function AvatarStage3D({
 
       const rimBaseGeo = new THREE.CylinderGeometry(2.42, 2.52, 0.12, 64);
       const rimBaseMat = new THREE.MeshStandardMaterial({
-        color: 0x2a0c13,
+        color: monoInit ? 0x202026 : 0x2a0c13,
         metalness: 0.8,
         roughness: 0.25,
       });
@@ -138,7 +166,7 @@ export default function AvatarStage3D({
 
       const topPlateGeo = new THREE.CylinderGeometry(1.98, 1.98, 0.03, 64);
       const topPlateMat = new THREE.MeshStandardMaterial({
-        color: 0x11070a,
+        color: monoInit ? 0x0b0b0e : 0x11070a,
         metalness: 0.55,
         roughness: 0.45,
       });
@@ -147,7 +175,7 @@ export default function AvatarStage3D({
       podiumGroup.add(topPlate);
 
       const outerNeonGeo = new THREE.TorusGeometry(2.12, 0.028, 12, 72);
-      const outerNeonMat = new THREE.MeshBasicMaterial({ color: 0xf87171 });
+      const outerNeonMat = new THREE.MeshBasicMaterial({ color: monoInit ? 0xf4f4f5 : 0xf87171 });
       const outerNeon = new THREE.Mesh(outerNeonGeo, outerNeonMat);
       outerNeon.rotation.x = Math.PI / 2;
       outerNeon.position.y = 0.015;
@@ -155,7 +183,7 @@ export default function AvatarStage3D({
 
       const midRingGeo = new THREE.RingGeometry(1.52, 1.58, 64);
       const midRingMat = new THREE.MeshBasicMaterial({
-        color: 0xef4444,
+        color: monoInit ? 0xd4d4d8 : 0xef4444,
         side: THREE.DoubleSide,
         transparent: true,
         opacity: 0.75,
@@ -167,11 +195,21 @@ export default function AvatarStage3D({
 
       const innerRingGeo = new THREE.RingGeometry(0.95, 0.99, 48);
       const innerRingMat = new THREE.MeshBasicMaterial({
-        color: 0xfca5a5,
+        color: monoInit ? 0xa1a1aa : 0xfca5a5,
         side: THREE.DoubleSide,
         transparent: true,
         opacity: 0.55,
       });
+      podiumColorRefs.current = {
+        rimLight,
+        underGlow,
+        bodyMat,
+        rimBaseMat,
+        topPlateMat,
+        outerNeonMat,
+        midRingMat,
+        innerRingMat,
+      };
       const innerRing = new THREE.Mesh(innerRingGeo, innerRingMat);
       innerRing.rotation.x = -Math.PI / 2;
       innerRing.position.y = 0.025;
@@ -323,14 +361,23 @@ export default function AvatarStage3D({
     };
   }, [robloxUserId]);
 
+  const isMono = theme === 'mono';
+
   return (
-    <div className="relative flex flex-col items-center justify-end h-72 my-2 rounded-2xl overflow-hidden border border-red-500/20 bg-gradient-to-b from-[#17090e] via-[#0d0508] to-[#060204]">
+    <div
+      className={`relative flex flex-col items-center justify-end h-72 my-2 rounded-2xl overflow-hidden border transition-colors duration-300 ${
+        isMono
+          ? 'border-white/15 bg-gradient-to-b from-[#16161a] via-[#0c0c0f] to-[#050507]'
+          : 'border-red-500/20 bg-gradient-to-b from-[#17090e] via-[#0d0508] to-[#060204]'
+      }`}
+    >
       {/* Studio Backdrop Lighting + Subtle Perspective Depth */}
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
-          backgroundImage:
-            'radial-gradient(ellipse 75% 58% at 50% 42%, rgba(220,38,38,0.22), transparent 70%), radial-gradient(ellipse 90% 35% at 50% 92%, rgba(239,68,68,0.16), transparent 70%)',
+          backgroundImage: isMono
+            ? 'radial-gradient(ellipse 75% 58% at 50% 42%, rgba(255,255,255,0.12), transparent 70%), radial-gradient(ellipse 90% 35% at 50% 92%, rgba(228,228,231,0.12), transparent 70%)'
+            : 'radial-gradient(ellipse 75% 58% at 50% 42%, rgba(220,38,38,0.22), transparent 70%), radial-gradient(ellipse 90% 35% at 50% 92%, rgba(239,68,68,0.16), transparent 70%)',
         }}
       />
       <div
@@ -341,8 +388,9 @@ export default function AvatarStage3D({
           className="w-full h-full origin-bottom"
           style={{
             transform: 'rotateX(68deg)',
-            backgroundImage:
-              'linear-gradient(to right, rgba(239,68,68,0.3) 1px, transparent 1px), linear-gradient(to bottom, rgba(239,68,68,0.3) 1px, transparent 1px)',
+            backgroundImage: isMono
+              ? 'linear-gradient(to right, rgba(255,255,255,0.28) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.28) 1px, transparent 1px)'
+              : 'linear-gradient(to right, rgba(239,68,68,0.3) 1px, transparent 1px), linear-gradient(to bottom, rgba(239,68,68,0.3) 1px, transparent 1px)',
             backgroundSize: '20px 20px',
             WebkitMaskImage:
               'radial-gradient(ellipse 72% 85% at 50% 72%, #000 18%, transparent 82%)',

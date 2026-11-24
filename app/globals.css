@@ -339,3 +339,78 @@ body {
 .kage-scroll::-webkit-scrollbar-thumb:hover {
   background: rgba(239, 68, 68, 0.65);
 }
+
+/* Monochrome (Noir B&W) Theme Switcher */
+html[data-theme="mono"] {
+  --ink: #060607;
+  --panel: #0e0e11;
+  --panel-2: #16161a;
+  --panel-3: #222228;
+  --line: rgba(255, 255, 255, 0.14);
+  --line-strong: rgba(255, 255, 255, 0.34);
+  --text: #fafafa;
+  --muted: #a1a1aa;
+  --ember-1: #ffffff;
+  --ember-2: #d4d4d8;
+  --ember-soft: #e4e4e7;
+}
+
+html[data-theme="mono"] body {
+  background: #060607;
+  color: #f4f4f5;
+}
+
+html[data-theme="mono"] .aa-btn--primary,
+html[data-theme="mono"] .aa-seg button[aria-current="page"] {
+  color: #09090b;
+  border-color: rgba(255, 255, 255, 0.85);
+  background: linear-gradient(180deg, #ffffff, #d4d4d8);
+  box-shadow: 0 8px 24px -8px rgba(255, 255, 255, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+html[data-theme="mono"] .aa-btn--primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #ffffff, #e4e4e7);
+  box-shadow: 0 10px 28px -6px rgba(255, 255, 255, 0.55);
+}
+
+html[data-theme="mono"] .aa-chip[aria-pressed="true"] {
+  color: #09090b;
+  border-color: rgba(255, 255, 255, 0.85);
+  background: linear-gradient(180deg, #ffffff, #d4d4d8);
+  box-shadow: 0 4px 16px -6px rgba(255, 255, 255, 0.45);
+}
+
+html[data-theme="mono"] .kage-mono-shell [class*="border-red-"] {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+html[data-theme="mono"] .kage-mono-shell [class*="bg-[#13080b]"],
+html[data-theme="mono"] .kage-mono-shell [class*="bg-[#12070a]"],
+html[data-theme="mono"] .kage-mono-shell [class*="bg-[#0c0709]"],
+html[data-theme="mono"] .kage-mono-shell [class*="bg-[#0b0406]"],
+html[data-theme="mono"] .kage-mono-shell [class*="bg-[#0e0608]"] {
+  background-color: rgba(16, 16, 20, 0.88);
+}
+
+html[data-theme="mono"] .kage-mono-shell [class*="from-[#1a0b0f]"] {
+  --tw-gradient-from: rgba(22, 22, 26, 0.94);
+  --tw-gradient-via: rgba(14, 14, 17, 0.94);
+  --tw-gradient-to: rgba(8, 8, 10, 0.96);
+  box-shadow: 0 0 40px rgba(255, 255, 255, 0.06);
+}
+
+html[data-theme="mono"] .kage-mono-shell [class*="text-red-"] {
+  color: #e4e4e7;
+}
+
+html[data-theme="mono"] .kage-scroll::-webkit-scrollbar-track {
+  background: rgba(18, 18, 22, 0.5);
+}
+
+html[data-theme="mono"] .kage-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+html[data-theme="mono"] .kage-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}

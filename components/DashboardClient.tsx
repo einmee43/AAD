@@ -18,6 +18,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Contrast,
   Copy,
   Flame,
   Heart,
@@ -252,6 +253,7 @@ function getRarityStyle(rarity?: string, name?: string) {
 
 export default function DashboardClient({ user }: { user: UserInfo }) {
   const [tab, setTab] = useState<'profile' | 'history' | 'keys'>('profile');
+  const [theme, setTheme] = useState<'kage' | 'mono'>('kage');
   const [hours, setHours] = useState(24);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedIdx, setSelectedIdx] = useState(0);
@@ -351,6 +353,35 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
       clearInterval(timer);
     };
   }, [hours, loadDashboard]);
+
+  // Theme persistence (Kage Crimson <-> Noir White/Black)
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('nexty_theme');
+      if (saved === 'mono') {
+        const id = requestAnimationFrame(() => setTheme('mono'));
+        return () => cancelAnimationFrame(id);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    setTheme((prev) => {
+      const next = prev === 'kage' ? 'mono' : 'kage';
+      try {
+        localStorage.setItem('nexty_theme', next);
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+  };
 
   // Detect new run_logs on auto-refresh and fire in-web alerts + toasts
   useEffect(() => {
@@ -611,12 +642,14 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
 
   return (
     <div
-      className={`bg-[#070506] text-zinc-100 relative overflow-x-hidden flex flex-col ${
+      className={`kage-mono-shell text-zinc-100 relative overflow-x-hidden flex flex-col transition-colors duration-300 ${
+        theme === 'mono' ? 'bg-[#060607]' : 'bg-[#070506]'
+      } ${
         tab === 'profile' ? 'min-h-screen lg:h-screen lg:overflow-hidden' : 'min-h-screen'
       }`}
     >
-      {/* Kage Three.js + Blurred Artwork Backdrop */}
-      <KageBackdrop />
+      {/* Kage / Noir Three.js + Blurred Artwork Backdrop */}
+      <KageBackdrop theme={theme} />
 
       {/* Top Navbar */}
       <header className="sticky top-0 z-20 shrink-0 border-b border-red-500/25 bg-[#0c0709]/85 backdrop-blur-xl">
@@ -706,6 +739,18 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                 </div>
               )}
             </div>
+
+            <button
+              onClick={toggleTheme}
+              title={theme === 'mono' ? 'สลับกลับธีม Kage แดง-ดำ' : 'สลับเป็นธีมขาวดำ'}
+              className="aa-btn !px-3"
+              aria-pressed={theme === 'mono'}
+            >
+              <Contrast className="w-4 h-4" />
+              <span className="hidden sm:inline text-xs">
+                {theme === 'mono' ? 'ขาวดำ' : 'Kage'}
+              </span>
+            </button>
 
             <button
               onClick={fetchDashboard}
@@ -821,6 +866,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                         : null
                     }
                     alt={activeAccount.roblox_username || activeAccount.bot_name}
+                    theme={theme}
                   />
 
                   {/* Bot Switcher + Level Badge */}
@@ -869,9 +915,9 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                     >
                       <div
                         className={`h-full rounded-full bg-gradient-to-r transition-all duration-500 ${
-                          isKage
-                            ? 'from-red-600 via-rose-500 to-amber-400'
-                            : 'from-purple-500 via-fuchsia-500 to-indigo-400'
+                          theme === 'mono'
+                            ? 'from-zinc-400 via-zinc-100 to-white'
+                            : 'from-red-600 via-rose-500 to-amber-400'
                         }`}
                         style={{ width: `${level > 0 ? xpPct : 100}%` }}
                       />
@@ -1153,7 +1199,9 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                             aria-selected={inventoryTab === t.id}
                             className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${
                               inventoryTab === t.id
-                                ? 'bg-red-600/25 border-red-500/60 text-white shadow-[0_0_12px_rgba(239,68,68,0.25)]'
+                                ? theme === 'mono'
+                                  ? 'bg-white text-zinc-950 border-white shadow-[0_0_12px_rgba(255,255,255,0.3)]'
+                                  : 'bg-red-600/25 border-red-500/60 text-white shadow-[0_0_12px_rgba(239,68,68,0.25)]'
                                 : 'bg-[#090506]/70 border-white/10 text-zinc-400 hover:text-zinc-200'
                             }`}
                           >
