@@ -8,10 +8,12 @@ import AvatarStage3D from '@/components/AvatarStage3D';
 import unitRarities from '@/lib/unitRarities.json';
 import unitPortraits from '@/lib/unitPortraits.json';
 import itemIcons from '@/lib/itemIcons.json';
+import mapIcons from '@/lib/mapIcons.json';
 
 const unitRarityMap = unitRarities as Record<string, string>;
 const localUnitPortraitMap = unitPortraits as Record<string, string>;
 const localItemIconMap = itemIcons as Record<string, string>;
+const localMapIconMap = mapIcons as Record<string, string>;
 import {
   Activity,
   Bell,
@@ -375,6 +377,43 @@ function timeAgo(iso: string) {
   if (diff < 60) return `${diff} วิ ที่แล้ว`;
   if (diff < 3600) return `${Math.floor(diff / 60)} นาทีที่แล้ว`;
   return `${Math.floor(diff / 3600)} ชม. ที่แล้ว`;
+}
+
+const GENERIC_MAP_KEYS = new Set(['story', 'raid', 'raids', 'challenge', 'daily challenge', 'lobby', 'main lobby']);
+
+function getMapThumbnail(mapName?: string | null, mode?: string | null): string {
+  const raw = (mapName || '').trim().toLowerCase();
+  if (raw) {
+    if (localMapIconMap[raw]) return localMapIconMap[raw];
+    const stripped = raw
+      .replace(/\s*[-–:]\s*(?:act|stage|infinite|legend|nightmare|hard).*$/i, '')
+      .replace(/\s*\((?:infinite|nightmare|hard|normal)\)\s*$/i, '')
+      .trim();
+    if (stripped && localMapIconMap[stripped]) return localMapIconMap[stripped];
+
+    let bestMatch = '';
+    let bestKeyLen = 0;
+    for (const [k, src] of Object.entries(localMapIconMap)) {
+      if (GENERIC_MAP_KEYS.has(k) || k.length < 4) continue;
+      if (raw.includes(k) && k.length > bestKeyLen) {
+        bestKeyLen = k.length;
+        bestMatch = src;
+      }
+    }
+    if (bestMatch) return bestMatch;
+  }
+
+  const m = (mode || '').trim().toLowerCase();
+  if (m.includes('challenge') || raw.includes('challenge')) {
+    return localMapIconMap['challenge'] || '/maps/default.png';
+  }
+  if (m.includes('raid') || raw.includes('raid')) {
+    return localMapIconMap['raid'] || '/maps/default.png';
+  }
+  if (m.includes('story') || m.includes('legend') || m.includes('infinite')) {
+    return localMapIconMap['story'] || '/maps/default.png';
+  }
+  return '/maps/default.png';
 }
 
 function isJunkReward(nameOrItem: string | { name: string; category?: string }): boolean {
@@ -1724,30 +1763,40 @@ export default function DashboardClient({
                 <section className="lg:col-span-8 lg:h-full lg:min-h-0 flex flex-col gap-4">
                   {/* Live Match & 6-Unit Team Banner */}
                   <div className="shrink-0 rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex items-center gap-2 text-xs">
-                        <span
-                          className={`w-2 h-2 rounded-full ${
-                            activeAccount.live_status === 'farming'
-                              ? 'bg-emerald-400 animate-pulse'
-                              : activeAccount.live_status === 'lobby'
-                              ? 'bg-sky-400'
-                              : 'bg-zinc-500'
-                          }`}
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="relative w-20 h-12 rounded-xl overflow-hidden shrink-0 border border-white/15 bg-[#090506]">
+                        <img
+                          src={getMapThumbnail(activeAccount.current_map, activeAccount.current_mode)}
+                          alt={activeAccount.current_map || 'Lobby'}
+                          className="w-full h-full object-cover"
                         />
-                        <span className="font-semibold text-zinc-200">
-                          {activeAccount.live_status === 'farming'
-                            ? 'อยู่ในแมตช์'
-                            : activeAccount.live_status === 'lobby'
-                            ? 'อยู่ใน Lobby'
-                            : 'ออฟไลน์'}
-                        </span>
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/55 to-transparent" />
                       </div>
-                      <div className="text-base font-bold text-white truncate">
-                        {activeAccount.current_mode || 'Lobby'}
-                      </div>
-                      <div className="text-xs text-zinc-400 truncate">
-                        {activeAccount.current_map || 'Main Lobby'}
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex items-center gap-2 text-xs">
+                          <span
+                            className={`w-2 h-2 rounded-full ${
+                              activeAccount.live_status === 'farming'
+                                ? 'bg-emerald-400 animate-pulse'
+                                : activeAccount.live_status === 'lobby'
+                                ? 'bg-sky-400'
+                                : 'bg-zinc-500'
+                            }`}
+                          />
+                          <span className="font-semibold text-zinc-200">
+                            {activeAccount.live_status === 'farming'
+                              ? 'อยู่ในแมตช์'
+                              : activeAccount.live_status === 'lobby'
+                              ? 'อยู่ใน Lobby'
+                              : 'ออฟไลน์'}
+                          </span>
+                        </div>
+                        <div className="text-base font-bold text-white truncate">
+                          {activeAccount.current_mode || 'Lobby'}
+                        </div>
+                        <div className="text-xs text-zinc-400 truncate">
+                          {activeAccount.current_map || 'Main Lobby'}
+                        </div>
                       </div>
                     </div>
 
@@ -3048,7 +3097,7 @@ export default function DashboardClient({
                           {/* Real Map Thumbnail */}
                           <div className="relative w-28 sm:w-32 h-[68px] rounded-xl overflow-hidden shrink-0 border border-white/15 bg-[#090506]">
                             <img
-                              src="/maps/default.png"
+                              src={getMapThumbnail(log.map_name, log.mode)}
                               alt={log.map_name}
                               className="w-full h-full object-cover"
                             />
