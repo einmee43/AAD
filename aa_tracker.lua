@@ -146,9 +146,15 @@ local function readCurrencies()
     return currencies, ready
 end
 
--- Read ALL unique portals from the active inventory container in memory (bypasses virtual scroll limit of ~24 cards)
+-- Master metadata loaders & complete RAM inventory + units collection scanner (bypasses virtual scroll limits)
 local cachedGcPortals = {}
+local cachedGcItems = {}
+local cachedGcUnits = {}
 local lastGcScanAt = 0
+local lastGcComplete = false
+local cachedUnitDefs = nil
+local cachedItemDefs = nil
+local cachedTraitDefs = nil
 
 local function prettifyItemId(idStr)
     local clean = tostring(idStr or ""):gsub("^portal_item__", ""):gsub("^portal_", ""):gsub("_", " ")
@@ -159,103 +165,403 @@ local function prettifyItemId(idStr)
     return clean
 end
 
-local function scanGcPortalsIfDue(force)
+local function prettifyId(idStr)
+    local clean = tostring(idStr or ""):gsub("_", " ")
+    clean = clean:gsub("(%a)([%w']*)", function(a, b) return a:upper() .. b end)
+    return clean
+end
+
+local function getUnitDefs()
+    if cachedUnitDefs ~= nil then return cachedUnitDefs end
+    cachedUnitDefs = {}
+    pcall(function()
+        local data = ReplicatedStorage:FindFirstChild("src") and ReplicatedStorage.src:FindFirstChild("Data")
+        local uMod = data and data:FindFirstChild("Units")
+        if uMod then
+            local ok, res = pcall(require, uMod)
+            if ok and type(res) == "table" then
+                cachedUnitDefs = res
+            end
+        end
+    end)
+    return cachedUnitDefs
+end
+
+local function getItemDefs()
+    if cachedItemDefs ~= nil then return cachedItemDefs end
+    cachedItemDefs = {}
+    pcall(function()
+        local data = ReplicatedStorage:FindFirstChild("src") and ReplicatedStorage.src:FindFirstChild("Data")
+        local iMod = data and data:FindFirstChild("Items")
+        if iMod then
+            local ok, res = pcall(require, iMod)
+            if ok and type(res) == "table" then
+                cachedItemDefs = res
+            end
+        end
+    end)
+    return cachedItemDefs
+end
+
+local function getTraitDefs()
+    if cachedTraitDefs ~= nil then return cachedTraitDefs end
+    cachedTraitDefs = {}
+    pcall(function()
+        local data = ReplicatedStorage:FindFirstChild("src") and ReplicatedStorage.src:FindFirstChild("Data")
+        local trMod = data and data:FindFirstChild("Traits")
+        if trMod then
+            local ok, res = pcall(require, trMod)
+            if ok and type(res) == "table" and type(res.info) == "table" then
+                cachedTraitDefs = res.info
+            end
+        end
+    end)
+    return cachedTraitDefs
+end
+
+local function normalizeTraitKey(rawTrait)
+    local low = tostring(rawTrait or ""):lower()
+    if low == "ethereal" then return "celestial"
+    elseif low == "neuroplasticity" then return "adept"
+    elseif low == "superior" then return "vigorous"
+    elseif low == "nimble" then return "swift"
+    elseif low == "marksman" then return "range"
+    end
+    return low
+end
+
+local function classifyItemCategory(itemId, dispName, itemDef, rawEntry)
+    local idLow = tostring(itemId or ""):lower()
+    local nameLow = tostring(dispName or ""):lower()
+    local grp = type(itemDef) == "table" and tostring(itemDef.item_group or ""):lower() or ""
+
+    if grp == "portals" or idLow:find("portal") or nameLow:find("portal") then
+        return "portal"
+    end
+    if type(rawEntry) == "table" then
+        local udata = rawget(rawEntry, "_unique_item_data")
+        if type(udata) == "table" and rawget(udata, "_unique_relic_data") then
+            return "relic"
+        end
+    end
+    if grp == "relics" or idLow:find("^artifact_") or idLow:find("relic") or nameLow:find("relic") then
+        return "relic"
+    end
+    if grp == "skins" or idLow:find("_skin$") then
+        return "skin"
+    end
+    if grp == "keys" or idLow:find("^key_") or idLow:find("^lucy_key") or idLow == "dungeon_key" or idLow:find("^raid_ticket") or nameLow:find("key ") then
+        return "key"
+    end
+    if grp == "xp food" or idLow:find("_xp") or idLow == "senzu_bean" or idLow == "hxh_fish" or idLow == "aot_fluid" or idLow == "soul_candy" or idLow == "dressrosa_grapes" or idLow == "cupcake" then
+        return "xp_food"
+    end
+    if grp == "stars" or idLow:find("^starfruit") or idLow:find("^capsule_") or idLow:find("^star_remnant") or nameLow:find("star fruit") or nameLow:find("star remnant") then
+        return "star"
+    end
+    if grp == "boosts" or idLow == "luckpotion" or idLow == "shinypotion" or nameLow:find("potion") then
+        return "boost"
+    end
+    if grp == "gifts" or idLow:find("^gift__") or idLow == "christmas_present" or idLow:find("^easter_egg") then
+        return "gift"
+    end
+    if grp == "materials" or idLow:find("^reroll_") or idLow == "summon_ticket" or idLow == "swordsmith_dawn_coin" then
+        return "material"
+    end
+    if grp == "defenses" or grp == "charms" or grp == "emotes" or grp == "maps" then
+        return "other"
+    end
+    return "material"
+end
+
+local function inferRarityFallback(rawName, idName)
+    local low = (tostring(rawName or "") .. " " .. tostring(idName or "")):lower()
+    if low:find("secret") or low:find("explosion") or low:find("demon") or low:find("perfect") or low:find("conqueror") or low:find("compass") or low:find("divine") then
+        return "Secret"
+    elseif low:find("portal") or low:find("cube") or low:find("remnant") or low:find("reroll") or low:find("key") or low:find("orb") or low:find("ball") or low:find("staff") or low:find("wings") or low:find("dawn") or low:find("charm") then
+        return "Mythic"
+    else
+        return "Legendary"
+    end
+end
+
+local function scanGcFullInventoryIfDue(force)
     if type(getgc) ~= "function" then return nil end
-    if not force and (os.time() - lastGcScanAt) < 35 and next(cachedGcPortals) ~= nil then
-        return cachedGcPortals
+    if not force and (os.time() - lastGcScanAt) < 35 and (next(cachedGcPortals) ~= nil or next(cachedGcItems) ~= nil or #cachedGcUnits > 0) then
+        return { portals = cachedGcPortals, items = cachedGcItems, units = cachedGcUnits, complete = lastGcComplete }
     end
     lastGcScanAt = os.time()
 
-    local ok, foundMap = pcall(function()
+    local unitDefs = getUnitDefs()
+    local itemDefs = getItemDefs()
+    local traitDefs = getTraitDefs()
+
+    local ok, result = pcall(function()
         local nameById = {}
-        local bestContainer = nil
-        local bestCount = 0
+        local profileTable = nil
+        local bestUniqueContainer = nil
+        local bestUniqueCount = 0
+        local bestNormalContainer = nil
+        local bestUnitContainer = nil
+        local bestUnitCount = 0
 
         for _, t in ipairs(getgc(true)) do
             if type(t) == "table" then
-                -- Detect item-name lookup dictionary (contains "Lotus Scepter" / "Eclipse Portal" / "aqua_staff" etc.)
                 if rawget(t, "Eclipse Portal") or rawget(t, "Sky Portal") or rawget(t, "Lotus Scepter") then
                     for dispName, itemId in pairs(t) do
                         if type(dispName) == "string" and type(itemId) == "string" then
                             nameById[itemId] = dispName
                         end
                     end
+                elseif type(rawget(t, "inventory")) == "table" and type(rawget(t, "collection")) == "table" and (rawget(t, "gold_amount") ~= nil or rawget(t, "gem_amount") ~= nil) then
+                    profileTable = t
+                elseif rawget(t, "fairy_tail_shard") and rawget(t, "arrancar_mask") and type(rawget(t, "fairy_tail_shard")) == "number" then
+                    bestNormalContainer = t
                 else
-                    -- Detect active unique-items container: values are { item_id = ..., uuid = ..., _unique_item_data = ... }
                     local k, firstVal = next(t)
-                    if k ~= nil and type(firstVal) == "table" and rawget(firstVal, "item_id") and (rawget(firstVal, "uuid") or rawget(firstVal, "_unique_item_data")) then
-                        local cnt = 0
-                        for _, _ in pairs(t) do
-                            cnt = cnt + 1
-                        end
-                        if cnt > bestCount then
-                            bestCount = cnt
-                            bestContainer = t
+                    if k ~= nil and type(firstVal) == "table" then
+                        if rawget(firstVal, "item_id") and (rawget(firstVal, "uuid") or rawget(firstVal, "_unique_item_data")) then
+                            local cnt = 0
+                            for _ in pairs(t) do cnt = cnt + 1 end
+                            if cnt > bestUniqueCount then
+                                bestUniqueCount = cnt
+                                bestUniqueContainer = t
+                            end
+                        elseif rawget(firstVal, "unit_id") and rawget(firstVal, "uuid") then
+                            local cnt = 0
+                            for _ in pairs(t) do cnt = cnt + 1 end
+                            if cnt > bestUnitCount then
+                                bestUnitCount = cnt
+                                bestUnitContainer = t
+                            end
                         end
                     end
                 end
             end
         end
 
-        if not bestContainer or bestCount == 0 then
-            return nil
-        end
+        local invTable = profileTable and rawget(profileTable, "inventory") or nil
+        local uniqueContainer = (type(invTable) == "table" and type(rawget(invTable, "unique_items")) == "table") and rawget(invTable, "unique_items") or bestUniqueContainer
+        local normalContainer = (type(invTable) == "table" and type(rawget(invTable, "normal_items")) == "table") and rawget(invTable, "normal_items") or bestNormalContainer
 
-        local grouped = {}
+        local portalsMap = {}
+        local itemsMap = {}
         local seenUuid = {}
-        for key, entry in pairs(bestContainer) do
-            if type(entry) == "table" then
-                local itemId = rawget(entry, "item_id")
-                local uid = tostring(rawget(entry, "uuid") or key)
-                if type(itemId) == "string" and itemId:lower():find("portal") and not seenUuid[uid] then
-                    seenUuid[uid] = true
-                    local dispName = nameById[itemId] or prettifyItemId(itemId)
-                    local udata = rawget(entry, "_unique_item_data")
-                    if type(udata) == "string" then
-                        local decOk, dec = pcall(HttpService.JSONDecode, HttpService, udata)
-                        udata = decOk and dec or nil
-                    end
-                    local pdata = type(udata) == "table" and rawget(udata, "_unique_portal_data") or nil
-                    local depth = type(pdata) == "table" and tonumber(rawget(pdata, "portal_depth")) or nil
-                    local tierStr = depth and ("T" .. tostring(depth)) or "T0"
-                    local hearts = type(pdata) == "table" and tonumber(rawget(pdata, "_host_star_remnants")) or nil
-                    local multVal = type(pdata) == "table" and (tonumber(rawget(pdata, "_portal_reward_scale")) or tonumber(rawget(pdata, "difficulty_scale"))) or nil
-                    local multStr = (multVal and multVal > 1) and ("x" .. string.format("%.1f", multVal)) or nil
-                    local ctl = type(pdata) == "table" and rawget(pdata, "_ctl") or nil
-                    local lvMods = type(ctl) == "table" and rawget(ctl, "_levelmodifiers") or nil
-                    local modCount = type(lvMods) == "table" and #lvMods or 0
-                    local modStr = modCount > 0 and (tostring(modCount) .. " ม็อด") or nil
 
-                    local low = (dispName .. " " .. itemId):lower()
-                    local rarity = "Mythic"
-                    if low:find("secret") or low:find("explosion") or low:find("demon") then
-                        rarity = "Secret"
-                    end
+        if type(uniqueContainer) == "table" then
+            for key, entry in pairs(uniqueContainer) do
+                if type(entry) == "table" then
+                    local itemId = rawget(entry, "item_id")
+                    local uid = tostring(rawget(entry, "uuid") or key)
+                    if type(itemId) == "string" and not seenUuid[uid] then
+                        seenUuid[uid] = true
+                        local def = itemDefs[itemId]
+                        local dispName = (type(def) == "table" and def.name) or nameById[itemId] or prettifyId(itemId)
+                        local udata = rawget(entry, "_unique_item_data")
+                        if type(udata) == "string" then
+                            local decOk, dec = pcall(HttpService.JSONDecode, HttpService, udata)
+                            udata = decOk and dec or nil
+                        end
+                        local cat = classifyItemCategory(itemId, dispName, def, entry)
 
-                    local gkey = dispName .. "_" .. tierStr
-                    if not grouped[gkey] then
-                        grouped[gkey] = {
-                            name = dispName,
-                            amount = 0,
-                            rarity = rarity,
-                            category = "portal",
-                            tier = tierStr,
-                            hearts = hearts,
-                            multiplier = multStr,
-                            mods = modStr,
-                        }
+                        if cat == "portal" then
+                            if dispName == prettifyId(itemId) then
+                                dispName = prettifyItemId(itemId)
+                            end
+                            local pdata = type(udata) == "table" and rawget(udata, "_unique_portal_data") or nil
+                            local depth = type(pdata) == "table" and tonumber(rawget(pdata, "portal_depth")) or nil
+                            local tierStr = depth and ("T" .. tostring(depth)) or "T0"
+                            local hearts = type(pdata) == "table" and tonumber(rawget(pdata, "_host_star_remnants")) or nil
+                            local multVal = type(pdata) == "table" and (tonumber(rawget(pdata, "_portal_reward_scale")) or tonumber(rawget(pdata, "difficulty_scale"))) or nil
+                            local multStr = (multVal and multVal > 1) and ("x" .. string.format("%.1f", multVal)) or nil
+                            local ctl = type(pdata) == "table" and rawget(pdata, "_ctl") or nil
+                            local lvMods = type(ctl) == "table" and rawget(ctl, "_levelmodifiers") or nil
+                            local modCount = type(lvMods) == "table" and #lvMods or 0
+                            local modStr = modCount > 0 and (tostring(modCount) .. " ม็อด") or nil
+
+                            local low = (dispName .. " " .. itemId):lower()
+                            local rarity = (type(def) == "table" and def.rarity) or ((low:find("secret") or low:find("explosion") or low:find("demon")) and "Secret" or "Mythic")
+
+                            local gkey = dispName .. "_" .. tierStr
+                            if not portalsMap[gkey] then
+                                portalsMap[gkey] = {
+                                    name = dispName,
+                                    amount = 0,
+                                    rarity = rarity,
+                                    category = "portal",
+                                    tier = tierStr,
+                                    hearts = hearts,
+                                    multiplier = multStr,
+                                    mods = modStr,
+                                }
+                            end
+                            portalsMap[gkey].amount = portalsMap[gkey].amount + 1
+                        else
+                            local rarity = (type(def) == "table" and def.rarity) or inferRarityFallback(dispName, itemId)
+                            local gkey = cat .. "::" .. dispName .. "::" .. rarity
+                            if not itemsMap[gkey] then
+                                itemsMap[gkey] = {
+                                    name = dispName,
+                                    amount = 0,
+                                    rarity = rarity,
+                                    category = cat,
+                                }
+                            end
+                            itemsMap[gkey].amount = itemsMap[gkey].amount + 1
+                        end
                     end
-                    grouped[gkey].amount = grouped[gkey].amount + 1
                 end
             end
         end
 
-        return next(grouped) ~= nil and grouped or nil
+        if type(normalContainer) == "table" then
+            for itemId, rawQty in pairs(normalContainer) do
+                local qty = tonumber(rawQty)
+                if type(itemId) == "string" and qty and qty > 0 and not itemId:find("__MOCK") then
+                    local def = itemDefs[itemId]
+                    local dispName = (type(def) == "table" and def.name) or nameById[itemId] or prettifyId(itemId)
+                    local rarity = (type(def) == "table" and def.rarity) or inferRarityFallback(dispName, itemId)
+                    local cat = classifyItemCategory(itemId, dispName, def, nil)
+                    if cat ~= "portal" then
+                        local gkey = cat .. "::" .. dispName .. "::" .. rarity
+                        if not itemsMap[gkey] then
+                            itemsMap[gkey] = {
+                                name = dispName,
+                                amount = 0,
+                                rarity = rarity,
+                                category = cat,
+                            }
+                        end
+                        itemsMap[gkey].amount = itemsMap[gkey].amount + qty
+                    end
+                end
+            end
+        end
+
+        local equippedSet = {}
+        local col = profileTable and rawget(profileTable, "collection") or nil
+        if type(col) == "table" then
+            local eq = rawget(col, "equipped_units")
+            if type(eq) == "table" then
+                for ek, ev in pairs(eq) do
+                    if type(ev) == "string" then
+                        equippedSet[ev] = true
+                    elseif type(ek) == "string" and ev then
+                        equippedSet[ek] = true
+                    end
+                end
+            end
+        end
+
+        local unitsGrouped = {}
+        if type(bestUnitContainer) == "table" then
+            local seenUnitUuid = {}
+            for key, entry in pairs(bestUnitContainer) do
+                if type(entry) == "table" then
+                    local unitId = rawget(entry, "unit_id")
+                    local uid = tostring(rawget(entry, "uuid") or key)
+                    if type(unitId) == "string" and not seenUnitUuid[uid] then
+                        seenUnitUuid[uid] = true
+                        local def = unitDefs[unitId]
+                        local uName = (type(def) == "table" and def.name) or prettifyId(unitId)
+                        local uRarity = (type(def) == "table" and def.rarity) or "Mythic"
+                        local isShiny = (rawget(entry, "shiny") == true)
+                        local xpVal = tonumber(rawget(entry, "xp")) or 0
+                        local lvlVal = tonumber(rawget(entry, "level"))
+                        if not lvlVal and xpVal <= 0 then
+                            lvlVal = 1
+                        end
+                        local isEq = equippedSet[uid] == true
+
+                        local rawTrait = rawget(entry, "trait")
+                        local traitTier = nil
+                        local traitsTbl = rawget(entry, "traits")
+                        if not rawTrait and type(traitsTbl) == "table" then
+                            local t1 = rawget(traitsTbl, "1") or rawget(traitsTbl, 1)
+                            if type(t1) ~= "table" then
+                                local _, firstTr = next(traitsTbl)
+                                t1 = firstTr
+                            end
+                            if type(t1) == "table" then
+                                rawTrait = rawget(t1, "trait")
+                                traitTier = tonumber(rawget(t1, "tier")) or rawget(t1, "tier")
+                            end
+                        end
+
+                        local traitNorm = rawTrait and normalizeTraitKey(rawTrait) or nil
+                        local tInfo = rawTrait and traitDefs[tostring(rawTrait)] or nil
+                        local traitDisplay = (type(tInfo) == "table" and tInfo.name) or (traitNorm and prettifyId(traitNorm)) or nil
+
+                        local gkey = table.concat({
+                            uName,
+                            isShiny and "S" or "N",
+                            traitNorm or "",
+                            tostring(traitTier or ""),
+                            isEq and "E" or "U",
+                        }, "|")
+                        local grp = unitsGrouped[gkey]
+                        if not grp then
+                            grp = {
+                                id = unitId,
+                                name = uName,
+                                rarity = uRarity,
+                                shiny = isShiny,
+                                trait = traitNorm,
+                                trait_name = traitDisplay,
+                                trait_tier = traitTier and tostring(traitTier) or nil,
+                                equipped = isEq,
+                                level = lvlVal,
+                                max_xp = math.floor(xpVal),
+                                amount = 0,
+                            }
+                            unitsGrouped[gkey] = grp
+                        end
+                        grp.amount = grp.amount + 1
+                        if math.floor(xpVal) > (grp.max_xp or 0) then
+                            grp.max_xp = math.floor(xpVal)
+                        end
+                        if lvlVal and (not grp.level or lvlVal > grp.level) then
+                            grp.level = lvlVal
+                        end
+                    end
+                end
+            end
+        end
+
+        local unitsList = {}
+        for _, u in pairs(unitsGrouped) do
+            table.insert(unitsList, u)
+        end
+        local rarityRank = { Secret = 1, Exclusive = 2, Mythic = 3, Legendary = 4, Epic = 5, Rare = 6, Common = 7 }
+        table.sort(unitsList, function(a, b)
+            if a.equipped ~= b.equipped then return a.equipped end
+            local ra = rarityRank[a.rarity] or 9
+            local rb = rarityRank[b.rarity] or 9
+            if ra ~= rb then return ra < rb end
+            if a.shiny ~= b.shiny then return a.shiny end
+            if (a.max_xp or 0) ~= (b.max_xp or 0) then return (a.max_xp or 0) > (b.max_xp or 0) end
+            return a.name < b.name
+        end)
+
+        return {
+            portals = portalsMap,
+            items = itemsMap,
+            units = unitsList,
+            complete = (type(normalContainer) == "table" and next(itemsMap) ~= nil),
+        }
     end)
 
-    if ok and foundMap then
-        cachedGcPortals = foundMap
-        return foundMap
+    if ok and result then
+        if next(result.portals) ~= nil then cachedGcPortals = result.portals end
+        if next(result.items) ~= nil then cachedGcItems = result.items end
+        if #result.units > 0 then cachedGcUnits = result.units end
+        lastGcComplete = result.complete == true
+        return {
+            portals = cachedGcPortals,
+            items = cachedGcItems,
+            units = cachedGcUnits,
+            complete = lastGcComplete,
+        }
     end
     return nil
 end
@@ -267,35 +573,25 @@ local function readUsefulItems(allowGcScan)
     local seenPortal = false
     local seenItem = false
     local counts = { portal = {}, item = {} }
-
-    local function inferRarity(rawName, idName)
-        local low = (rawName .. " " .. (idName or "")):lower()
-        if low:find("secret") or low:find("explosion") or low:find("demon") or low:find("perfect") or low:find("conqueror") or low:find("compass") or low:find("divine") then
-            return "Secret"
-        elseif low:find("portal") or low:find("cube") or low:find("remnant") or low:find("reroll") or low:find("key") or low:find("orb") or low:find("ball") or low:find("staff") or low:find("wings") or low:find("dawn") or low:find("charm") then
-            return "Mythic"
-        else
-            return "Legendary"
-        end
-    end
+    local itemDefs = getItemDefs()
 
     local function addItem(rawName, amt, idName, extra)
         if not rawName or type(rawName) ~= "string" then return end
         local trimmed = rawName:match("^%s*(.-)%s*$")
         if not trimmed or #trimmed == 0 then return end
         local low = trimmed:lower()
-        if low == "portals" or low == "item" or low == "items" or low == "item name" or low:find("gift") then
+        if low == "portals" or low == "item" or low == "items" or low == "item name" then
             return
         end
-        local isPortal = low:find("portal") ~= nil or (idName and idName:lower():find("portal") ~= nil)
-        local cat = isPortal and "portal" or "item"
-        if isPortal then seenPortal = true else seenItem = true end
+        local def = idName and itemDefs[idName] or nil
+        local cat = classifyItemCategory(idName, trimmed, def, nil)
+        if cat == "portal" then seenPortal = true else seenItem = true end
         local key = trimmed .. (extra and extra.tier and ("_" .. extra.tier) or "")
-        if not counts[cat][key] then
-            counts[cat][key] = {
+        if not counts[cat == "portal" and "portal" or "item"][key] then
+            counts[cat == "portal" and "portal" or "item"][key] = {
                 name = trimmed,
                 amount = 0,
-                rarity = inferRarity(trimmed, idName),
+                rarity = (type(def) == "table" and def.rarity) or inferRarityFallback(trimmed, idName),
                 category = cat,
                 tier = extra and extra.tier or nil,
                 hearts = extra and extra.hearts or nil,
@@ -303,7 +599,8 @@ local function readUsefulItems(allowGcScan)
                 mods = extra and extra.mods or nil,
             }
         end
-        counts[cat][key].amount = counts[cat][key].amount + (tonumber(amt) or 1)
+        local bucket = counts[cat == "portal" and "portal" or "item"][key]
+        bucket.amount = bucket.amount + (tonumber(amt) or 1)
     end
 
     pcall(function()
@@ -353,17 +650,26 @@ local function readUsefulItems(allowGcScan)
         end
     end)
 
+    local gcRes = nil
     if allowGcScan then
-        local gcPortals = scanGcPortalsIfDue(false)
-        if gcPortals then
-            cachedCategoryItems.portal = gcPortals
-            seenPortal = true
-        end
+        gcRes = scanGcFullInventoryIfDue(false)
+    elseif next(cachedGcItems) ~= nil or next(cachedGcPortals) ~= nil then
+        gcRes = { portals = cachedGcPortals, items = cachedGcItems, units = cachedGcUnits, complete = lastGcComplete }
     end
-    if seenPortal and next(counts.portal) ~= nil and next(cachedGcPortals) == nil then
+
+    if gcRes and next(gcRes.portals) ~= nil then
+        cachedCategoryItems.portal = gcRes.portals
+        seenPortal = true
+    elseif seenPortal and next(counts.portal) ~= nil then
         cachedCategoryItems.portal = counts.portal
     end
-    if seenItem then
+
+    local isComplete = false
+    if gcRes and gcRes.complete and next(gcRes.items) ~= nil then
+        cachedCategoryItems.item = gcRes.items
+        seenItem = true
+        isComplete = true
+    elseif seenItem then
         cachedCategoryItems.item = counts.item
     end
 
@@ -374,7 +680,7 @@ local function readUsefulItems(allowGcScan)
     for _, v in pairs(cachedCategoryItems.item) do
         table.insert(list, v)
     end
-    return list, (seenPortal or seenItem)
+    return list, (seenPortal or seenItem), (gcRes and gcRes.units or cachedGcUnits), isComplete
 end
 
 -- Read equipped 6-unit team from PlayerGui.spawn_units.Lives.Frame.Units (slots 1..6)
@@ -504,7 +810,7 @@ local sentForCurrentMatch = false
 local lastQuickSync = 0
 local lastItemSig = ""
 
-local function sendHeartbeatNow(itemsList)
+local function sendHeartbeatNow(itemsList, unitsOverride, completeOverride)
     local status, mode, mapName, waveStr = detectState()
     local cur, ready = readCurrencies()
     if ready and not statsReady then
@@ -512,12 +818,43 @@ local function sendHeartbeatNow(itemsList)
         statsReady = true
     end
     if ready then
-        local usefulItems = itemsList or readUsefulItems(true)
+        local usefulItems, gcUnits, gcComplete
+        if itemsList then
+            usefulItems = itemsList
+            gcUnits = unitsOverride or cachedGcUnits
+            gcComplete = completeOverride == true
+        else
+            local _saw
+            usefulItems, _saw, gcUnits, gcComplete = readUsefulItems(true)
+        end
+
         for _, it in ipairs(usefulItems) do
             if it.name and it.name:lower():find("dawn coin") then
                 cur["Dawn Coins"] = it.amount
             end
         end
+
+        local equippedTeam = readEquippedTeam()
+        if type(gcUnits) == "table" and #gcUnits > 0 and #equippedTeam > 0 then
+            local eqLvlByName = {}
+            for _, eq in ipairs(equippedTeam) do
+                if eq.name and eq.level then
+                    local k = tostring(eq.name):lower()
+                    if not eqLvlByName[k] or eq.level > eqLvlByName[k] then
+                        eqLvlByName[k] = eq.level
+                    end
+                end
+            end
+            for _, u in ipairs(gcUnits) do
+                if u.equipped and u.name then
+                    local bestEq = eqLvlByName[tostring(u.name):lower()]
+                    if bestEq and (not u.level or bestEq > u.level) then
+                        u.level = bestEq
+                    end
+                end
+            end
+        end
+
         postIngest({
             event_type = "heartbeat",
             status = status,
@@ -526,14 +863,16 @@ local function sendHeartbeatNow(itemsList)
             current_wave = waveStr,
             currencies = cur,
             items = usefulItems,
-            team = readEquippedTeam()
+            items_complete = gcComplete,
+            units = (type(gcUnits) == "table" and #gcUnits > 0) and gcUnits or nil,
+            team = equippedTeam
         })
     end
 end
 
 task.spawn(function()
     while true do
-        sendHeartbeatNow(nil)
+        sendHeartbeatNow(nil, nil, nil)
         task.wait(45)
     end
 end)
@@ -544,7 +883,7 @@ task.spawn(function()
             local pg = LocalPlayer:FindFirstChild("PlayerGui")
             local itemsGui = pg and pg:FindFirstChild("items")
             if itemsGui and itemsGui.Enabled then
-                local itemsList, sawAny = readUsefulItems(false)
+                local itemsList, sawAny, gcUnits, isComplete = readUsefulItems(false)
                 if sawAny then
                     local parts = {}
                     for _, it in ipairs(itemsList) do
@@ -555,7 +894,7 @@ task.spawn(function()
                     if sig ~= lastItemSig and (os.time() - lastQuickSync) >= 4 then
                         lastItemSig = sig
                         lastQuickSync = os.time()
-                        sendHeartbeatNow(itemsList)
+                        sendHeartbeatNow(itemsList, gcUnits, isComplete)
                     end
                 end
             end

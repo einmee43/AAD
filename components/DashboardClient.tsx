@@ -6,9 +6,11 @@ import KageBackdrop from '@/components/KageBackdrop';
 import NextyLogo from '@/components/NextyLogo';
 import AvatarStage3D from '@/components/AvatarStage3D';
 import unitRarities from '@/lib/unitRarities.json';
+import unitPortraits from '@/lib/unitPortraits.json';
 import itemIcons from '@/lib/itemIcons.json';
 
 const unitRarityMap = unitRarities as Record<string, string>;
+const localUnitPortraitMap = unitPortraits as Record<string, string>;
 const localItemIconMap = itemIcons as Record<string, string>;
 import {
   Activity,
@@ -76,6 +78,46 @@ interface TeamUnit {
   trait?: string | null;
 }
 
+interface CollectionUnit {
+  id?: string;
+  name: string;
+  rarity?: string;
+  shiny?: boolean;
+  trait?: string | null;
+  trait_name?: string | null;
+  trait_tier?: string | null;
+  equipped?: boolean;
+  level?: number | null;
+  max_xp?: number | null;
+  amount: number;
+}
+
+interface GroupedCollectionUnit {
+  name: string;
+  rarity: string;
+  totalAmount: number;
+  shinyAmount: number;
+  equippedCount: number;
+  bestLevel: number | null;
+  maxXp: number;
+  primaryTrait: string | null;
+  primaryTraitName: string | null;
+  variants: CollectionUnit[];
+}
+
+type InventoryTab =
+  | 'all'
+  | 'units'
+  | 'team'
+  | 'portals'
+  | 'relic'
+  | 'key'
+  | 'skin'
+  | 'star'
+  | 'xp_food'
+  | 'material'
+  | 'other';
+
 const TRAIT_ALIAS: Record<string, string> = {
   vigorous: 'vigorous',
   superior: 'vigorous',
@@ -84,6 +126,7 @@ const TRAIT_ALIAS: Record<string, string> = {
   swift: 'swift',
   nimble: 'swift',
   adept: 'adept',
+  neuroplasticity: 'adept',
   culling: 'culling',
   sniper: 'sniper',
   godspeed: 'godspeed',
@@ -95,6 +138,71 @@ const TRAIT_ALIAS: Record<string, string> = {
   unique: 'unique',
 };
 
+const TRAIT_DISPLAY_NAME: Record<string, string> = {
+  vigorous: 'Vigorous',
+  superior: 'Superior',
+  range: 'Range',
+  marksman: 'Marksman',
+  swift: 'Swift',
+  nimble: 'Nimble',
+  adept: 'Adept',
+  neuroplasticity: 'Adept',
+  culling: 'Culling',
+  sniper: 'Sniper',
+  godspeed: 'Godspeed',
+  reaper: 'Reaper',
+  celestial: 'Celestial',
+  ethereal: 'Celestial',
+  divine: 'Divine',
+  golden: 'Golden',
+  unique: 'Unique',
+};
+
+const CATEGORY_LABEL_TH: Record<string, string> = {
+  portal: 'ประตู',
+  relic: 'เรลิก',
+  skin: 'สกิน',
+  key: 'คีย์',
+  star: 'ดาว',
+  xp_food: 'อาหาร XP',
+  material: 'วัตถุดิบ',
+  boost: 'บูสต์',
+  gift: 'ของขวัญ',
+  other: 'อื่นๆ',
+};
+
+function getItemCategoryBucket(it: RewardItem): Exclude<InventoryTab, 'all' | 'units' | 'team'> {
+  const cat = (it.category || '').toLowerCase();
+  const n = (it.name || '').toLowerCase();
+  if (cat === 'portal' || n.includes('portal')) return 'portals';
+  if (cat === 'relic' || n.includes('relic')) return 'relic';
+  if (cat === 'skin') return 'skin';
+  if (cat === 'key' || n.startsWith('key ') || n.includes('key (') || n.includes('dungeon key')) {
+    return 'key';
+  }
+  if (
+    cat === 'star' ||
+    n.includes('star fruit') ||
+    n.includes('star remnant') ||
+    n.endsWith(' star')
+  ) {
+    return 'star';
+  }
+  if (
+    cat === 'xp_food' ||
+    n.includes('ramen') ||
+    n.includes('spirit bean') ||
+    n.includes('cooked fish') ||
+    n.includes('cupcake') ||
+    n.includes('xp potion')
+  ) {
+    return 'xp_food';
+  }
+  if (cat === 'boost' || cat === 'gift' || cat === 'other') return 'other';
+  if (cat === 'material') return 'material';
+  return 'material';
+}
+
 function getTraitIcon(trait?: string | null): string | null {
   const t = (trait || '').trim().toLowerCase();
   const mapped = TRAIT_ALIAS[t];
@@ -102,9 +210,25 @@ function getTraitIcon(trait?: string | null): string | null {
   return null;
 }
 
-function getUnitCardTheme(name: string, trait?: string | null) {
+function normalizeUnitRarityLabel(raw?: string, name?: string): string {
+  const r = (raw || unitRarityMap[(name || '').toLowerCase()] || '').trim().toLowerCase();
+  if (r === 'secret') return 'Secret';
+  if (r === 'exclusive') return 'Exclusive';
+  if (r === 'legendary') return 'Legendary';
+  if (r === 'epic') return 'Epic';
+  if (r === 'rare') return 'Rare';
+  if (r === 'common') return 'Common';
+  return 'Mythic';
+}
+
+function getUnitCardTheme(
+  name: string,
+  trait?: string | null,
+  explicitRarity?: string,
+  isShiny?: boolean
+) {
   const n = name.toLowerCase();
-  const r = (unitRarityMap[n] || '').toLowerCase();
+  const r = (explicitRarity || unitRarityMap[n] || '').toLowerCase();
   const t = (trait || '').toLowerCase();
   const isRainbow =
     r === 'secret' ||
@@ -124,11 +248,32 @@ function getUnitCardTheme(name: string, trait?: string | null) {
       innerBg: 'linear-gradient(180deg, #1d4332 0%, #0f241b 100%)',
     };
   }
+  if (isShiny) {
+    return {
+      frame:
+        'p-[2.5px] bg-gradient-to-b from-cyan-300 via-amber-300 to-rose-400 shadow-[0_0_16px_rgba(251,191,36,0.34)]',
+      innerBg: 'linear-gradient(180deg, #2a2145 0%, #140f24 100%)',
+    };
+  }
   if (r === 'legendary' || n.includes('windsong') || n.includes('bulby')) {
     return {
       frame:
         'p-[2.5px] bg-gradient-to-b from-amber-300 via-amber-500 to-yellow-700 shadow-[0_0_14px_rgba(245,158,11,0.28)]',
       innerBg: 'linear-gradient(180deg, #3c2a12 0%, #1c1207 100%)',
+    };
+  }
+  if (r === 'epic') {
+    return {
+      frame:
+        'p-[2.5px] bg-gradient-to-b from-indigo-300 via-indigo-500 to-blue-800 shadow-[0_0_12px_rgba(99,102,241,0.24)]',
+      innerBg: 'linear-gradient(180deg, #1e2348 0%, #0f1228 100%)',
+    };
+  }
+  if (r === 'rare' || r === 'common') {
+    return {
+      frame:
+        'p-[2.5px] bg-gradient-to-b from-sky-300 via-sky-500 to-slate-700 shadow-[0_0_10px_rgba(56,189,248,0.2)]',
+      innerBg: 'linear-gradient(180deg, #16293d 0%, #0b1622 100%)',
     };
   }
   return {
@@ -220,12 +365,36 @@ function getItemIcon(name: string): string | null {
 function getRarityStyle(rarity?: string, name?: string) {
   const r = (rarity || '').toLowerCase();
   const n = (name || '').toLowerCase();
-  if (r === 'secret' || n.includes('secret') || n.includes('explosion') || n.includes('demon')) {
+  if (r === 'secret' || n.includes('secret') || n.includes('explosion') || n.includes('demon portal')) {
     return {
       label: 'Secret',
       card: 'border-rose-500/60 bg-gradient-to-b from-rose-950/50 to-[#140d1d] shadow-[0_0_20px_rgba(244,63,94,0.18)]',
       text: 'text-rose-400',
       badge: 'bg-rose-500/15 text-rose-300 border-rose-500/40',
+    };
+  }
+  if (r === 'exclusive') {
+    return {
+      label: 'Exclusive',
+      card: 'border-cyan-400/55 bg-gradient-to-b from-cyan-950/45 to-[#0c1420] shadow-[0_0_18px_rgba(34,211,238,0.18)]',
+      text: 'text-cyan-300',
+      badge: 'bg-cyan-500/15 text-cyan-200 border-cyan-400/40',
+    };
+  }
+  if (r === 'epic') {
+    return {
+      label: 'Epic',
+      card: 'border-indigo-400/45 bg-gradient-to-b from-indigo-950/40 to-[#101122] shadow-[0_0_14px_rgba(129,140,248,0.14)]',
+      text: 'text-indigo-300',
+      badge: 'bg-indigo-500/15 text-indigo-200 border-indigo-400/40',
+    };
+  }
+  if (r === 'rare' || r === 'common') {
+    return {
+      label: r === 'common' ? 'Common' : 'Rare',
+      card: 'border-sky-400/40 bg-gradient-to-b from-sky-950/35 to-[#0c1522] shadow-[0_0_12px_rgba(56,189,248,0.12)]',
+      text: 'text-sky-300',
+      badge: 'bg-sky-500/15 text-sky-200 border-sky-400/35',
     };
   }
   if (n.includes('dawn coin')) {
@@ -236,7 +405,7 @@ function getRarityStyle(rarity?: string, name?: string) {
       badge: 'bg-purple-500/15 text-purple-300 border-purple-500/40',
     };
   }
-  if (r === 'legendary' || n.includes('reroll') || n.includes('star')) {
+  if (r === 'legendary' || (!r && (n.includes('reroll') || n.includes('star')))) {
     return {
       label: 'Legendary',
       card: 'border-amber-500/50 bg-gradient-to-b from-amber-950/35 to-[#140d1d] shadow-[0_0_16px_rgba(245,158,11,0.12)]',
@@ -266,11 +435,15 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   const [loading, setLoading] = useState(false);
 
   // Filters
-  const [inventoryTab, setInventoryTab] = useState<'all' | 'items' | 'portals' | 'team'>('all');
-  const [rarityFilter, setRarityFilter] = useState<'ALL' | 'Secret' | 'Mythic' | 'Legendary'>('ALL');
+  const [inventoryTab, setInventoryTab] = useState<InventoryTab>('all');
+  const [unitFilter, setUnitFilter] = useState<'ALL' | 'shiny' | 'trait' | 'equipped'>('ALL');
+  const [rarityFilter, setRarityFilter] = useState<
+    'ALL' | 'Secret' | 'Exclusive' | 'Mythic' | 'Legendary' | 'Epic' | 'Rare'
+  >('ALL');
   const [portalKind, setPortalKind] = useState<string>('ALL');
   const [portalTier, setPortalTier] = useState<string>('ALL');
   const [search, setSearch] = useState('');
+  const [selectedUnitModal, setSelectedUnitModal] = useState<GroupedCollectionUnit | null>(null);
   const [botFilter, setBotFilter] = useState('ALL');
   const [resultFilter, setResultFilter] = useState('ALL');
 
@@ -538,15 +711,123 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
       ? 100
       : 0;
 
-  const activeTeam: TeamUnit[] = Array.isArray(activeCurrencies['_team'])
-    ? (activeCurrencies['_team'] as TeamUnit[])
-    : [];
+  const activeTeam: TeamUnit[] = useMemo(
+    () =>
+      Array.isArray(activeCurrencies['_team']) ? (activeCurrencies['_team'] as TeamUnit[]) : [],
+    [activeCurrencies]
+  );
 
-  // Fetch unit portraits dynamically for equipped team
+  const activeCollectionUnits: CollectionUnit[] = useMemo(
+    () =>
+      Array.isArray(activeCurrencies['_units'])
+        ? (activeCurrencies['_units'] as CollectionUnit[])
+        : [],
+    [activeCurrencies]
+  );
+
+  const getUnitPortrait = useCallback(
+    (name: string) => localUnitPortraitMap[name.toLowerCase()] || unitIconCache[name] || '',
+    [unitIconCache]
+  );
+
+  const unitStats = useMemo(() => {
+    let total = 0;
+    let shiny = 0;
+    let withTrait = 0;
+    const uniqueNames = new Set<string>();
+    for (const u of activeCollectionUnits) {
+      const amt = Number(u.amount) || 1;
+      total += amt;
+      uniqueNames.add(u.name.toLowerCase());
+      if (u.shiny) shiny += amt;
+      if (u.trait) withTrait += amt;
+    }
+    return { total, unique: uniqueNames.size, shiny, withTrait };
+  }, [activeCollectionUnits]);
+
+  const groupedUnits: GroupedCollectionUnit[] = useMemo(() => {
+    const map = new Map<string, GroupedCollectionUnit>();
+    for (const u of activeCollectionUnits) {
+      if (unitFilter === 'shiny' && !u.shiny) continue;
+      if (unitFilter === 'trait' && !u.trait) continue;
+      if (unitFilter === 'equipped' && !u.equipped) continue;
+
+      const normRarity = normalizeUnitRarityLabel(u.rarity, u.name);
+      if (rarityFilter !== 'ALL' && normRarity !== rarityFilter) continue;
+
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        const tDisp = (u.trait_name || (u.trait ? TRAIT_DISPLAY_NAME[u.trait] || u.trait : '')).toLowerCase();
+        if (!u.name.toLowerCase().includes(q) && !tDisp.includes(q)) continue;
+      }
+
+      const key = u.name.toLowerCase();
+      const amt = Number(u.amount) || 1;
+      const lvl = typeof u.level === 'number' && u.level > 0 ? u.level : null;
+      const xpVal = Number(u.max_xp) || 0;
+      const existing = map.get(key);
+      if (!existing) {
+        map.set(key, {
+          name: u.name,
+          rarity: normRarity,
+          totalAmount: amt,
+          shinyAmount: u.shiny ? amt : 0,
+          equippedCount: u.equipped ? amt : 0,
+          bestLevel: lvl,
+          maxXp: xpVal,
+          primaryTrait: u.trait || null,
+          primaryTraitName:
+            u.trait_name || (u.trait ? TRAIT_DISPLAY_NAME[u.trait] || u.trait : null),
+          variants: [u],
+        });
+      } else {
+        existing.totalAmount += amt;
+        if (u.shiny) existing.shinyAmount += amt;
+        if (u.equipped) existing.equippedCount += amt;
+        if (lvl && (!existing.bestLevel || lvl > existing.bestLevel)) existing.bestLevel = lvl;
+        if (xpVal > existing.maxXp) existing.maxXp = xpVal;
+        if (!existing.primaryTrait && u.trait) {
+          existing.primaryTrait = u.trait;
+          existing.primaryTraitName =
+            u.trait_name || TRAIT_DISPLAY_NAME[u.trait] || u.trait;
+        }
+        existing.variants.push(u);
+      }
+    }
+
+    const rank: Record<string, number> = {
+      Secret: 1,
+      Exclusive: 2,
+      Mythic: 3,
+      Legendary: 4,
+      Epic: 5,
+      Rare: 6,
+      Common: 7,
+    };
+    return Array.from(map.values()).sort((a, b) => {
+      if ((a.equippedCount > 0) !== (b.equippedCount > 0)) return a.equippedCount > 0 ? -1 : 1;
+      const ra = rank[a.rarity] ?? 9;
+      const rb = rank[b.rarity] ?? 9;
+      if (ra !== rb) return ra - rb;
+      if ((a.shinyAmount > 0) !== (b.shinyAmount > 0)) return a.shinyAmount > 0 ? -1 : 1;
+      if (a.maxXp !== b.maxXp) return b.maxXp - a.maxXp;
+      return a.name.localeCompare(b.name);
+    });
+  }, [activeCollectionUnits, unitFilter, rarityFilter, search]);
+
+  // Fetch unit portraits dynamically only for units missing from bundled localPortraits
   useEffect(() => {
-    const missing = activeTeam
-      .map((u) => u.name)
-      .filter((n) => n && unitIconCache[n] === undefined);
+    const namesToCheck = [
+      ...activeTeam.map((u) => u.name),
+      ...(inventoryTab === 'units' ? groupedUnits.slice(0, 60).map((u) => u.name) : []),
+    ];
+    const missing = Array.from(
+      new Set(
+        namesToCheck.filter(
+          (n) => n && !localUnitPortraitMap[n.toLowerCase()] && unitIconCache[n] === undefined
+        )
+      )
+    ).slice(0, 12);
     if (missing.length === 0) return;
     let cancelled = false;
     fetch(`/api/unit-icons?names=${encodeURIComponent(missing.join('|'))}`)
@@ -566,23 +847,34 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
     return () => {
       cancelled = true;
     };
-  }, [activeTeam, unitIconCache]);
+  }, [activeTeam, groupedUnits, inventoryTab, unitIconCache]);
 
-  const allBotItems = activeSnap?.items || [];
-  const portalItems = allBotItems.filter(
-    (it) => it.category === 'portal' || it.name.toLowerCase().includes('portal')
-  );
-  const regularItems = allBotItems.filter(
-    (it) => it.category !== 'portal' && !it.name.toLowerCase().includes('portal')
-  );
+  const allBotItems = useMemo(() => activeSnap?.items || [], [activeSnap]);
+
+  const categoryCounts = useMemo(() => {
+    const counts: Record<Exclude<InventoryTab, 'all' | 'units' | 'team'>, number> = {
+      portals: 0,
+      relic: 0,
+      key: 0,
+      skin: 0,
+      star: 0,
+      xp_food: 0,
+      material: 0,
+      other: 0,
+    };
+    for (const it of allBotItems) {
+      counts[getItemCategoryBucket(it)] += 1;
+    }
+    return counts;
+  }, [allBotItems]);
 
   // Filtered inventory items for active bot
   const activeItems = (
-    inventoryTab === 'portals'
-      ? portalItems
-      : inventoryTab === 'items'
-      ? regularItems
-      : allBotItems
+    inventoryTab === 'all'
+      ? allBotItems
+      : inventoryTab === 'units' || inventoryTab === 'team'
+      ? []
+      : allBotItems.filter((it) => getItemCategoryBucket(it) === inventoryTab)
   ).filter((it) => {
     const style = getRarityStyle(it.rarity, it.name);
     if (rarityFilter !== 'ALL' && style.label !== rarityFilter) return false;
@@ -1053,7 +1345,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                       {/* 6 Equipped Unit Slots (aavalues.trade halftone + rarity frame style) */}
                       {[1, 2, 3, 4, 5, 6].map((slotNum) => {
                         const unit = activeTeam.find((u) => u.slot === slotNum);
-                        const unitImg = unit ? unitIconCache[unit.name] : '';
+                        const unitImg = unit ? getUnitPortrait(unit.name) : '';
                         const traitImg = unit ? getTraitIcon(unit.trait) : null;
                         const theme = unit ? getUnitCardTheme(unit.name, unit.trait) : null;
                         return (
@@ -1184,15 +1476,22 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                   </div>
 
                   {/* Inventory Category Tabs, Rarity & Portal Tier Filters */}
-                  <div className="shrink-0 rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3 space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="shrink-0 rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3 space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2.5">
                       <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="หมวดคลัง">
                         {(
                           [
                             { id: 'all', label: `ทั้งหมด (${allBotItems.length})` },
-                            { id: 'items', label: `ไอเทม (${regularItems.length})` },
-                            { id: 'portals', label: `ประตู (${portalItems.length})` },
-                            { id: 'team', label: `ทีมยูนิต (${activeTeam.length})` },
+                            { id: 'units', label: `ยูนิต (${unitStats.total})` },
+                            { id: 'team', label: `ทีม (${activeTeam.length})` },
+                            { id: 'portals', label: `ประตู (${categoryCounts.portals})` },
+                            { id: 'material', label: `วัตถุดิบ (${categoryCounts.material})` },
+                            { id: 'star', label: `ดาว (${categoryCounts.star})` },
+                            { id: 'relic', label: `เรลิก (${categoryCounts.relic})` },
+                            { id: 'key', label: `คีย์ (${categoryCounts.key})` },
+                            { id: 'skin', label: `สกิน (${categoryCounts.skin})` },
+                            { id: 'xp_food', label: `อาหาร XP (${categoryCounts.xp_food})` },
+                            { id: 'other', label: `อื่นๆ (${categoryCounts.other})` },
                           ] as const
                         ).map((t) => (
                           <button
@@ -1200,7 +1499,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                             role="tab"
                             onClick={() => setInventoryTab(t.id)}
                             aria-selected={inventoryTab === t.id}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${
+                            className={`px-2.5 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${
                               inventoryTab === t.id
                                 ? theme === 'mono'
                                   ? 'bg-white text-zinc-950 border-white shadow-[0_0_12px_rgba(255,255,255,0.3)]'
@@ -1218,15 +1517,51 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                         <input
                           value={search}
                           onChange={(e) => setSearch(e.target.value)}
-                          placeholder="ค้นหาพอร์ทัล / ไอเทม..."
+                          placeholder="ค้นหายูนิต / พอร์ทัล / ไอเทม..."
                           className="pl-8 pr-3 py-1.5 text-xs rounded-xl bg-[#090506] border border-red-500/25 focus:outline-none focus:border-red-400 text-zinc-100"
                         />
                       </div>
                     </div>
 
+                    {inventoryTab === 'units' && (
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {(
+                            [
+                              { id: 'ALL', label: `ทั้งหมด (${unitStats.unique} ชนิด)` },
+                              { id: 'shiny', label: `✦ Shiny (${unitStats.shiny})` },
+                              { id: 'trait', label: `มี Trait (${unitStats.withTrait})` },
+                              { id: 'equipped', label: 'กำลังใส่ (Equipped)' },
+                            ] as const
+                          ).map((uf) => (
+                            <button
+                              key={uf.id}
+                              type="button"
+                              onClick={() => setUnitFilter(uf.id)}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer ${
+                                unitFilter === uf.id
+                                  ? theme === 'mono'
+                                    ? 'bg-white text-zinc-950 border-white'
+                                    : 'bg-amber-500/25 border-amber-400/60 text-amber-100'
+                                  : 'bg-black/35 border-white/10 text-zinc-400 hover:text-zinc-200'
+                              }`}
+                            >
+                              {uf.label}
+                            </button>
+                          ))}
+                        </div>
+                        <span className="text-[11px] text-zinc-400">
+                          คลิกการ์ดเพื่อดู Shiny / Trait แยกตัว
+                        </span>
+                      </div>
+                    )}
+
                     {inventoryTab !== 'team' && (
-                      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/5" role="group" aria-label="กรองตามความหายาก">
-                        {(['ALL', 'Secret', 'Mythic', 'Legendary'] as const).map((r) => (
+                      <div className="flex flex-wrap items-center gap-2 pt-1.5 border-t border-white/5" role="group" aria-label="กรองตามความหายาก">
+                        {(inventoryTab === 'units'
+                          ? (['ALL', 'Secret', 'Exclusive', 'Mythic', 'Legendary', 'Epic', 'Rare'] as const)
+                          : (['ALL', 'Secret', 'Mythic', 'Legendary', 'Epic', 'Rare'] as const)
+                        ).map((r) => (
                           <button
                             key={r}
                             onClick={() => setRarityFilter(r)}
@@ -1278,12 +1613,121 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
 
                   {/* Scrollable Inventory / Team / Recent Runs Area */}
                   <div className="lg:flex-1 lg:min-h-0 lg:overflow-y-auto kage-scroll pr-1 space-y-4 pb-2">
-                  {inventoryTab === 'team' ? (
+                  {inventoryTab === 'units' ? (
+                    groupedUnits.length > 0 ? (
+                      <div
+                        key={`units-${unitFilter}-${rarityFilter}-${activeAccount.id}`}
+                        className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3"
+                      >
+                        {groupedUnits.map((gu, idx) => {
+                          const cardTheme = getUnitCardTheme(
+                            gu.name,
+                            gu.primaryTrait,
+                            gu.rarity,
+                            gu.shinyAmount > 0
+                          );
+                          const portraitUrl = getUnitPortrait(gu.name);
+                          const traitImg = getTraitIcon(gu.primaryTrait);
+                          return (
+                            <button
+                              key={`${gu.name}-${idx}`}
+                              type="button"
+                              onClick={() => setSelectedUnitModal(gu)}
+                              style={{ animationDelay: `${Math.min(idx * 20, 240)}ms` }}
+                              className={`aspect-square rounded-2xl transition-transform hover:-translate-y-0.5 text-left cursor-pointer animate-fade-slide ${cardTheme.frame}`}
+                            >
+                              <div
+                                className="relative w-full h-full rounded-[13px] overflow-hidden flex items-end justify-center"
+                                style={{ background: cardTheme.innerBg }}
+                              >
+                                <div
+                                  className="absolute inset-0 pointer-events-none opacity-65"
+                                  style={{
+                                    backgroundImage:
+                                      'radial-gradient(rgba(0,0,0,0.42) 1.6px, transparent 1.6px)',
+                                    backgroundSize: '9px 9px',
+                                  }}
+                                />
+                                {portraitUrl ? (
+                                  <img
+                                    src={portraitUrl}
+                                    alt={gu.name}
+                                    loading="lazy"
+                                    className="relative z-10 w-full h-full object-contain object-bottom pt-3"
+                                  />
+                                ) : (
+                                  <Shield className="relative z-10 w-9 h-9 mb-8 text-purple-300/80" />
+                                )}
+                                <div className="absolute inset-x-0 bottom-0 h-14 z-20 bg-gradient-to-t from-black/95 via-black/55 to-transparent pointer-events-none" />
+
+                                {/* Top Left: Equipped or Best Lv + Shiny */}
+                                <div className="absolute top-1.5 left-1.5 z-30 flex flex-col gap-1 items-start">
+                                  {gu.equippedCount > 0 && (
+                                    <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/85 text-black text-[9.5px] font-extrabold leading-none shadow">
+                                      EQUIP
+                                    </span>
+                                  )}
+                                  {gu.bestLevel ? (
+                                    <span className="text-[10px] font-extrabold text-white leading-none [text-shadow:0_1px_3px_#000]">
+                                      Lv.{gu.bestLevel}
+                                    </span>
+                                  ) : null}
+                                  {gu.shinyAmount > 0 && (
+                                    <span className="px-1.5 py-0.5 rounded-md bg-amber-400/90 text-zinc-950 text-[9px] font-black leading-none shadow">
+                                      ✦ SHINY
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Top Right: Amount + Trait Icon */}
+                                <div className="absolute top-1.5 right-1.5 z-30 flex flex-col items-end gap-1">
+                                  <span className="px-1.5 py-0.5 rounded-md bg-black/75 border border-white/15 text-white text-[10px] font-bold leading-none">
+                                    x{gu.totalAmount}
+                                  </span>
+                                  {traitImg && (
+                                    <img
+                                      src={traitImg}
+                                      alt={gu.primaryTraitName || 'trait'}
+                                      title={gu.primaryTraitName || undefined}
+                                      className="w-5 h-5 object-contain drop-shadow-[0_1px_4px_rgba(0,0,0,1)]"
+                                    />
+                                  )}
+                                </div>
+
+                                <div className="absolute bottom-1 inset-x-1.5 z-30 text-center">
+                                  <div className="text-[11px] font-extrabold text-white leading-tight truncate [text-shadow:0_1.5px_3px_#000,0_0_6px_#000]">
+                                    {gu.name}
+                                  </div>
+                                  <div className="text-[9.5px] font-semibold text-zinc-300/90 leading-tight">
+                                    {gu.rarity}
+                                  </div>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/70 p-6 text-center space-y-1.5">
+                        <p className="text-xs text-zinc-200 font-semibold">
+                          {activeCollectionUnits.length === 0
+                            ? 'ยังไม่มีข้อมูลยูนิตทั้งหมดจากบอทนี้'
+                            : 'ไม่พบยูนิตที่ตรงกับตัวกรอง'}
+                        </p>
+                        {activeCollectionUnits.length === 0 && (
+                          <p className="text-[11px] text-zinc-400">
+                            รันสคริปต์เวอร์ชันล่าสุด (หลังอัปเดต) ใน MuMu เพื่อให้บอทดึงยูนิตทั้งคลังขึ้นมาอัตโนมัติครับ
+                          </p>
+                        )}
+                      </div>
+                    )
+                  ) : inventoryTab === 'team' ? (
                     activeTeam.length > 0 ? (
                       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
                         {activeTeam.map((unit) => {
                           const theme = getUnitCardTheme(unit.name, unit.trait);
                           const traitImg = getTraitIcon(unit.trait);
+                          const teamImg = getUnitPortrait(unit.name);
                           return (
                             <div
                               key={unit.slot}
@@ -1301,9 +1745,9 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                                     backgroundSize: '10px 10px',
                                   }}
                                 />
-                                {unitIconCache[unit.name] ? (
+                                {teamImg ? (
                                   <img
-                                    src={unitIconCache[unit.name]}
+                                    src={teamImg}
                                     alt={unit.name}
                                     className="relative z-10 w-full h-full object-contain object-bottom pt-2"
                                   />
@@ -1353,16 +1797,24 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                         const icon = getItemIcon(item.name);
                         const tierTag =
                           item.tier || (item.name.match(/T(\d+)/i)?.[0]?.toUpperCase() ?? null);
+                        const catBadge =
+                          CATEGORY_LABEL_TH[(item.category || '').toLowerCase()] ||
+                          CATEGORY_LABEL_TH[getItemCategoryBucket(item)] ||
+                          null;
                         return (
                           <div
                             key={`${item.name}-${idx}`}
-                            style={{ animationDelay: `${Math.min(idx * 40, 280)}ms` }}
+                            style={{ animationDelay: `${Math.min(idx * 30, 240)}ms` }}
                             className={`rounded-2xl border p-4 flex flex-col justify-between min-h-[156px] transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.01] animate-fade-slide ${style.card}`}
                           >
                             <div className="flex items-center justify-between gap-2">
                               {tierTag ? (
                                 <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-amber-500/20 border border-amber-400/40 text-amber-200">
                                   {tierTag}
+                                </span>
+                              ) : catBadge ? (
+                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-zinc-300">
+                                  {catBadge}
                                 </span>
                               ) : (
                                 <span />
@@ -1375,7 +1827,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                                   </span>
                                 ) : null}
                                 <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-black/40 border border-white/10 text-zinc-100">
-                                  x{item.amount}
+                                  x{item.amount.toLocaleString()}
                                 </span>
                               </div>
                             </div>
@@ -1965,6 +2417,175 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
           </div>
         )}
       </main>
+
+      {/* Unit Breakdown Modal */}
+      {selectedUnitModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setSelectedUnitModal(null)}
+        >
+          <div
+            className="w-full max-w-2xl rounded-2xl border border-red-500/35 bg-[#11080b]/95 shadow-2xl overflow-hidden animate-fade-slide"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {(() => {
+              const portraitUrl = getUnitPortrait(selectedUnitModal.name);
+              const cardTheme = getUnitCardTheme(
+                selectedUnitModal.name,
+                selectedUnitModal.primaryTrait,
+                selectedUnitModal.rarity,
+                selectedUnitModal.shinyAmount > 0
+              );
+              const crossBotRows: Array<{ botName: string; unit: CollectionUnit }> = [];
+              for (const acc of accounts) {
+                const snap = snapshotMap.get(acc.id);
+                const list = Array.isArray(snap?.currencies?.['_units'])
+                  ? (snap!.currencies['_units'] as CollectionUnit[])
+                  : [];
+                for (const u of list) {
+                  if (u.name.toLowerCase() === selectedUnitModal.name.toLowerCase()) {
+                    crossBotRows.push({ botName: acc.bot_name, unit: u });
+                  }
+                }
+              }
+              const allBotsTotal = crossBotRows.reduce(
+                (sum, r) => sum + (Number(r.unit.amount) || 1),
+                0
+              );
+              const allBotsShiny = crossBotRows.reduce(
+                (sum, r) => sum + (r.unit.shiny ? Number(r.unit.amount) || 1 : 0),
+                0
+              );
+
+              return (
+                <>
+                  <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3.5 min-w-0">
+                      <div className={`w-16 h-16 rounded-xl shrink-0 ${cardTheme.frame}`}>
+                        <div
+                          className="w-full h-full rounded-[9px] overflow-hidden flex items-end justify-center"
+                          style={{ background: cardTheme.innerBg }}
+                        >
+                          {portraitUrl ? (
+                            <img
+                              src={portraitUrl}
+                              alt={selectedUnitModal.name}
+                              className="w-full h-full object-contain object-bottom pt-1"
+                            />
+                          ) : (
+                            <Shield className="w-7 h-7 mb-3 text-purple-300/80" />
+                          )}
+                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-base font-bold text-white truncate">
+                          {selectedUnitModal.name}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-white/10 text-zinc-200">
+                            {selectedUnitModal.rarity}
+                          </span>
+                          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-400/30 text-emerald-300">
+                            รวมทั้งหมด {allBotsTotal || selectedUnitModal.totalAmount} ตัว
+                          </span>
+                          {(allBotsShiny || selectedUnitModal.shinyAmount) > 0 && (
+                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-amber-400/20 border border-amber-400/40 text-amber-200">
+                              ✦ Shiny {allBotsShiny || selectedUnitModal.shinyAmount}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedUnitModal(null)}
+                      className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white cursor-pointer"
+                      aria-label="ปิดหน้าต่าง"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="p-4 sm:p-5 max-h-[60vh] overflow-y-auto kage-scroll">
+                    <table className="w-full text-xs text-left">
+                      <thead>
+                        <tr className="text-[11px] uppercase tracking-wider text-zinc-400 border-b border-white/10">
+                          <th className="pb-2 font-semibold">บอท</th>
+                          <th className="pb-2 font-semibold">ระดับ / Lv</th>
+                          <th className="pb-2 font-semibold">Shiny</th>
+                          <th className="pb-2 font-semibold">Trait</th>
+                          <th className="pb-2 font-semibold">สถานะ</th>
+                          <th className="pb-2 font-semibold text-right">จำนวน</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {(crossBotRows.length > 0
+                          ? crossBotRows
+                          : selectedUnitModal.variants.map((u) => ({
+                              botName: activeAccount?.bot_name || 'Bot 1',
+                              unit: u,
+                            }))
+                        ).map(({ botName, unit: v }, i) => {
+                          const tImg = getTraitIcon(v.trait);
+                          const tName =
+                            v.trait_name ||
+                            (v.trait ? TRAIT_DISPLAY_NAME[v.trait] || v.trait : null);
+                          return (
+                            <tr key={i} className="hover:bg-white/5">
+                              <td className="py-2.5 font-semibold text-white">{botName}</td>
+                              <td className="py-2.5 text-zinc-200">
+                                {v.level ? `Lv.${v.level}` : v.max_xp ? `${v.max_xp.toLocaleString()} XP` : 'Lv.1'}
+                              </td>
+                              <td className="py-2.5">
+                                {v.shiny ? (
+                                  <span className="px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-200 font-bold text-[10px]">
+                                    ✦ SHINY
+                                  </span>
+                                ) : (
+                                  <span className="text-zinc-500">ปกติ</span>
+                                )}
+                              </td>
+                              <td className="py-2.5">
+                                {tName ? (
+                                  <span className="inline-flex items-center gap-1.5 text-zinc-100 font-medium">
+                                    {tImg && (
+                                      <img
+                                        src={tImg}
+                                        alt={tName}
+                                        className="w-4 h-4 object-contain"
+                                      />
+                                    )}
+                                    {tName}
+                                    {v.trait_tier ? ` ${v.trait_tier}` : ''}
+                                  </span>
+                                ) : (
+                                  <span className="text-zinc-500">-</span>
+                                )}
+                              </td>
+                              <td className="py-2.5">
+                                {v.equipped ? (
+                                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-semibold">
+                                    ใส่ทีม
+                                  </span>
+                                ) : (
+                                  <span className="text-zinc-500">ในคลัง</span>
+                                )}
+                              </td>
+                              <td className="py-2.5 text-right font-bold text-white">
+                                x{v.amount}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* Live In-Web Toast Notifications */}
       {toasts.length > 0 && (

@@ -145,11 +145,20 @@ body {
 .aa-chip[data-rarity="secret"] {
   --c: var(--ember-1);
 }
+.aa-chip[data-rarity="exclusive"] {
+  --c: #22d3ee;
+}
 .aa-chip[data-rarity="mythic"] {
   --c: var(--mythic);
 }
 .aa-chip[data-rarity="legendary"] {
   --c: var(--gold);
+}
+.aa-chip[data-rarity="epic"] {
+  --c: #818cf8;
+}
+.aa-chip[data-rarity="rare"] {
+  --c: #38bdf8;
 }
 .aa-chip[aria-pressed="true"] {
   color: #fff;

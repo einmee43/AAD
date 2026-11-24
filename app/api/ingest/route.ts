@@ -137,8 +137,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: accErr?.message || 'Account upsert failed' }, { status: 500 });
     }
 
-    // Update inventory snapshot if provided (preserve existing currencies like Dawn Coins & _team)
-    if (body.currencies || body.items || Array.isArray(body.team)) {
+    // Update inventory snapshot if provided (preserve existing currencies like Dawn Coins, _team & _units)
+    if (
+      body.currencies ||
+      body.items ||
+      Array.isArray(body.team) ||
+      Array.isArray(body.units)
+    ) {
       const { data: existingSnap } = await admin
         .from('inventory_snapshots')
         .select('currencies, items')
@@ -154,6 +159,10 @@ export async function POST(request: Request) {
 
       if (Array.isArray(body.team) && body.team.length > 0) {
         mergedCurrencies._team = body.team;
+      }
+
+      if (Array.isArray(body.units) && body.units.length > 0) {
+        mergedCurrencies._units = body.units;
       }
 
       const incomingItems: RewardItem[] = Array.isArray(body.items) ? body.items : [];
@@ -177,10 +186,13 @@ export async function POST(request: Request) {
       );
       const existingRegular = existingItems.filter((it) => !isPortalItem(it));
 
-      const mergedItems = [
-        ...(incomingPortals.length > 0 ? incomingPortals : existingPortals),
-        ...(incomingRegular.length > 0 ? incomingRegular : existingRegular),
-      ];
+      const mergedItems =
+        body.items_complete === true && incomingItems.length > 0
+          ? incomingItems.filter((it) => (it.name || '').toLowerCase() !== 'portals')
+          : [
+              ...(incomingPortals.length > 0 ? incomingPortals : existingPortals),
+              ...(incomingRegular.length > 0 ? incomingRegular : existingRegular),
+            ];
 
       await admin.from('inventory_snapshots').upsert(
         {
