@@ -1353,11 +1353,18 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                                 <span className={`text-[11px] font-medium ${style.text}`}>
                                   {style.label}
                                 </span>
-                                {item.multiplier ? (
-                                  <span className="text-[10px] font-semibold text-emerald-300 truncate">
-                                    {item.multiplier}
-                                  </span>
-                                ) : null}
+                                <div className="flex items-center gap-1.5 truncate">
+                                  {item.mods ? (
+                                    <span className="text-[10px] font-medium text-amber-300/90">
+                                      {item.mods}
+                                    </span>
+                                  ) : null}
+                                  {item.multiplier ? (
+                                    <span className="text-[10px] font-semibold text-emerald-300 truncate">
+                                      {item.multiplier}
+                                    </span>
+                                  ) : null}
+                                </div>
                               </div>
                             </div>
                           </div>
