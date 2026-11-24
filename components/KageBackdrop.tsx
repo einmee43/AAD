@@ -26,7 +26,7 @@ export default function KageBackdrop({ theme = 'kage' }: { theme?: 'kage' | 'mon
       <iframe
         src="/bg/phase-space/index.html"
         title="Phase Space Background"
-        className={`absolute inset-0 w-full h-full border-0 pointer-events-none blur-xl scale-110 transition-[filter] duration-300 ${
+        className={`absolute inset-0 w-full h-full border-0 pointer-events-none blur-[6px] scale-105 transition-[filter] duration-300 ${
           isMono ? 'grayscale contrast-125 brightness-90' : ''
         }`}
         tabIndex={-1}
