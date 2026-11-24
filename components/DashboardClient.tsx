@@ -106,6 +106,7 @@ interface GroupedCollectionUnit {
 }
 
 type InventoryTab =
+  | 'gained'
   | 'all'
   | 'units'
   | 'team'
@@ -171,7 +172,9 @@ const CATEGORY_LABEL_TH: Record<string, string> = {
   other: 'อื่นๆ',
 };
 
-function getItemCategoryBucket(it: RewardItem): Exclude<InventoryTab, 'all' | 'units' | 'team'> {
+type ItemCategoryTab = Exclude<InventoryTab, 'gained' | 'all' | 'units' | 'team'>;
+
+function getItemCategoryBucket(it: RewardItem): ItemCategoryTab {
   const cat = (it.category || '').toLowerCase();
   const n = (it.name || '').toLowerCase();
   if (cat === 'portal' || n.includes('portal')) return 'portals';
@@ -435,7 +438,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   const [loading, setLoading] = useState(false);
 
   // Filters
-  const [inventoryTab, setInventoryTab] = useState<InventoryTab>('all');
+  const [inventoryTab, setInventoryTab] = useState<InventoryTab>('gained');
   const [unitFilter, setUnitFilter] = useState<'ALL' | 'shiny' | 'trait' | 'equipped'>('ALL');
   const [rarityFilter, setRarityFilter] = useState<
     'ALL' | 'Secret' | 'Exclusive' | 'Mythic' | 'Legendary' | 'Epic' | 'Rare'
@@ -444,7 +447,8 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   const [portalTier, setPortalTier] = useState<string>('ALL');
   const [search, setSearch] = useState('');
   const [selectedUnitModal, setSelectedUnitModal] = useState<GroupedCollectionUnit | null>(null);
-  const [lootViewMode, setLootViewMode] = useState<'latest' | 'avg' | 'total'>('latest');
+  const [lootViewMode, setLootViewMode] = useState<'total' | 'latest'>('total');
+  const [lootScope, setLootScope] = useState<'bot' | 'all'>('bot');
   const [botFilter, setBotFilter] = useState('ALL');
   const [resultFilter, setResultFilter] = useState('ALL');
 
@@ -864,7 +868,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   const allBotItems = useMemo(() => activeSnap?.items || [], [activeSnap]);
 
   const categoryCounts = useMemo(() => {
-    const counts: Record<Exclude<InventoryTab, 'all' | 'units' | 'team'>, number> = {
+    const counts: Record<ItemCategoryTab, number> = {
       portals: 0,
       relic: 0,
       key: 0,
@@ -884,7 +888,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   const activeItems = (
     inventoryTab === 'all'
       ? allBotItems
-      : inventoryTab === 'units' || inventoryTab === 'team'
+      : inventoryTab === 'gained' || inventoryTab === 'units' || inventoryTab === 'team'
       ? []
       : allBotItems.filter((it) => getItemCategoryBucket(it) === inventoryTab)
   ).filter((it) => {
@@ -965,8 +969,8 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
 
   const activeBotRunStats = useMemo(() => {
     const botName = activeAccount?.bot_name;
-    const targetLogs = botName ? logs.filter((l) => l.bot_name === botName) : logs;
-    const scoped = targetLogs.length > 0 ? targetLogs : logs;
+    const scoped =
+      lootScope === 'bot' && botName ? logs.filter((l) => l.bot_name === botName) : logs;
     const latestRun = scoped[0] || null;
     const runCount = scoped.length;
     const mapTotals: Record<
@@ -974,7 +978,10 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
       { name: string; amount: number; runsWithDrop: number; category?: string; rarity?: string }
     > = {};
 
-    for (const log of scoped) {
+    const sourceLogs = lootViewMode === 'latest' ? (latestRun ? [latestRun] : []) : scoped;
+    const denominator = lootViewMode === 'latest' ? (latestRun ? 1 : 0) : runCount;
+
+    for (const log of sourceLogs) {
       const seenThisRun = new Set<string>();
       for (const r of log.rewards || []) {
         if (isJunkReward(r.name)) continue;
@@ -998,9 +1005,17 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
       }
     }
 
-    const sortedLoot = Object.values(mapTotals).sort((a, b) => b.amount - a.amount);
-    return { latestRun, runCount, sortedLoot };
-  }, [logs, activeAccount?.bot_name]);
+    const sortedLoot = Object.values(mapTotals)
+      .filter((item) => {
+        const st = getRarityStyle(item.rarity, item.name);
+        if (rarityFilter !== 'ALL' && st.label !== rarityFilter) return false;
+        if (search.trim() && !item.name.toLowerCase().includes(search.toLowerCase())) return false;
+        return true;
+      })
+      .sort((a, b) => b.amount - a.amount);
+
+    return { latestRun, runCount, denominator, sortedLoot };
+  }, [logs, activeAccount?.bot_name, lootScope, lootViewMode, rarityFilter, search]);
 
   const filteredLootSummary = useMemo(() => {
     const runCount = filteredLogs.length;
@@ -1594,155 +1609,14 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                     </div>
                   </div>
 
-                  {/* Per-Run Loot Showcase Strip (for Farm Shop / Customers) */}
-                  <div className="shrink-0 rounded-2xl border border-red-500/25 bg-[#13080b]/85 px-3.5 py-2.5 space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Sparkles className="w-3.5 h-3.5 text-amber-300 shrink-0" />
-                        <span className="text-xs font-bold text-white shrink-0">
-                          ของที่ได้ต่อตา
-                        </span>
-                        {lootViewMode === 'latest' && activeBotRunStats.latestRun && (
-                          <span className="text-[11px] text-zinc-400 truncate">
-                            {activeBotRunStats.latestRun.result === 'Win' ? 'ชนะ' : 'แพ้'} •{' '}
-                            {activeBotRunStats.latestRun.map_name} •{' '}
-                            {formatDuration(activeBotRunStats.latestRun.duration_sec)} •{' '}
-                            {timeAgo(activeBotRunStats.latestRun.created_at)}
-                          </span>
-                        )}
-                        {lootViewMode !== 'latest' && (
-                          <span className="text-[11px] text-zinc-400">
-                            คิดจาก {activeBotRunStats.runCount} รอบของ {activeAccount.bot_name}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {(
-                          [
-                            { id: 'latest', label: 'ตาล่าสุด' },
-                            { id: 'avg', label: 'เฉลี่ย / ตา' },
-                            { id: 'total', label: `รวม ${activeBotRunStats.runCount} ตา` },
-                          ] as const
-                        ).map((m) => (
-                          <button
-                            key={m.id}
-                            type="button"
-                            onClick={() => setLootViewMode(m.id)}
-                            className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer ${
-                              lootViewMode === m.id
-                                ? theme === 'mono'
-                                  ? 'bg-white text-zinc-950 border-white'
-                                  : 'bg-red-500/25 border-red-400/60 text-white'
-                                : 'bg-black/35 border-white/10 text-zinc-400 hover:text-zinc-200'
-                            }`}
-                          >
-                            {m.label}
-                          </button>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => setTab('history')}
-                          className="text-[11px] text-red-300 hover:text-white ml-1 cursor-pointer"
-                        >
-                          ดูทุกรอบ →
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {lootViewMode === 'latest' ? (
-                        (() => {
-                          const latest = activeBotRunStats.latestRun;
-                          const clean = (latest?.rewards || []).filter((r) => !isJunkReward(r.name));
-                          if (!latest) {
-                            return (
-                              <span className="text-[11px] text-zinc-500">
-                                ยังไม่มีรอบที่จบในหน้าต่างเวลานี้
-                              </span>
-                            );
-                          }
-                          if (clean.length === 0) {
-                            return (
-                              <span className="text-[11px] text-zinc-400">
-                                ตาล่าสุดยังไม่มีบันทึกของดรอปเพิ่ม (อัปเดตสคริปต์แล้วระบบจะเทียบของก่อน-หลังเข้าด่านทุกตาให้ครับ)
-                              </span>
-                            );
-                          }
-                          return clean.map((r, i) => {
-                            const icon = getRewardIcon(r);
-                            const st = getRarityStyle(r.rarity, r.name);
-                            return (
-                              <span
-                                key={`${r.name}-${i}`}
-                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-xs font-semibold ${st.badge}`}
-                              >
-                                {icon ? (
-                                  <img
-                                    src={icon}
-                                    alt={r.name}
-                                    className="w-4 h-4 rounded object-contain shrink-0"
-                                  />
-                                ) : (
-                                  <Sparkles className="w-3.5 h-3.5 shrink-0" />
-                                )}
-                                <span>{r.name}</span>
-                                <strong className="text-white">+{r.amount.toLocaleString()}</strong>
-                              </span>
-                            );
-                          });
-                        })()
-                      ) : activeBotRunStats.sortedLoot.length > 0 ? (
-                        activeBotRunStats.sortedLoot.slice(0, 12).map((item) => {
-                          const icon = getRewardIcon(item);
-                          const st = getRarityStyle(item.rarity, item.name);
-                          const avg =
-                            activeBotRunStats.runCount > 0
-                              ? item.amount / activeBotRunStats.runCount
-                              : item.amount;
-                          const dropPct =
-                            activeBotRunStats.runCount > 0
-                              ? Math.round((item.runsWithDrop / activeBotRunStats.runCount) * 100)
-                              : 100;
-                          const valStr =
-                            lootViewMode === 'avg'
-                              ? `${avg >= 10 ? Math.round(avg).toLocaleString() : avg.toFixed(1)}/ตา`
-                              : `+${item.amount.toLocaleString()}`;
-                          return (
-                            <span
-                              key={item.name}
-                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-xs font-semibold ${st.badge}`}
-                            >
-                              {icon && (
-                                <img
-                                  src={icon}
-                                  alt={item.name}
-                                  className="w-4 h-4 rounded object-contain shrink-0"
-                                />
-                              )}
-                              <span>{item.name}</span>
-                              <strong className="text-white">{valStr}</strong>
-                              {lootViewMode === 'avg' && dropPct < 100 && (
-                                <span className="text-[10px] opacity-75">({dropPct}%)</span>
-                              )}
-                            </span>
-                          );
-                        })
-                      ) : (
-                        <span className="text-[11px] text-zinc-400">
-                          ยังไม่มีของดรอปที่บันทึกไว้ (สคริปต์เวอร์ชันล่าสุดจะเทียบคลังก่อน-หลังจบด่านให้อัตโนมัติทุกตา)
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Inventory Category Tabs, Rarity & Portal Tier Filters */}
+                  {/* Primary Mode Switch: ของที่ได้ (Default Hero) + กระเป๋า (On-Demand) */}
                   <div className="shrink-0 rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3 space-y-2.5">
                     <div className="flex flex-wrap items-center justify-between gap-2.5">
                       <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="หมวดคลัง">
                         {(
                           [
-                            { id: 'all', label: `ทั้งหมด (${allBotItems.length})` },
+                            { id: 'gained', label: `✨ ของที่ได้ (${activeBotRunStats.sortedLoot.length})` },
+                            { id: 'all', label: `กระเป๋า (${allBotItems.length})` },
                             { id: 'units', label: `ยูนิต (${unitStats.total})` },
                             { id: 'team', label: `ทีม (${activeTeam.length})` },
                             { id: 'portals', label: `ประตู (${categoryCounts.portals})` },
@@ -1778,11 +1652,87 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                         <input
                           value={search}
                           onChange={(e) => setSearch(e.target.value)}
-                          placeholder="ค้นหายูนิต / พอร์ทัล / ไอเทม..."
+                          placeholder="ค้นหาของที่ได้ / ยูนิต / ไอเทม..."
                           className="pl-8 pr-3 py-1.5 text-xs rounded-xl bg-[#090506] border border-red-500/25 focus:outline-none focus:border-red-400 text-zinc-100"
                         />
                       </div>
                     </div>
+
+                    {inventoryTab === 'gained' && (
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {(
+                            [
+                              { id: 'total', label: `รวม + เฉลี่ย/ตา (${activeBotRunStats.runCount} รอบ)` },
+                              { id: 'latest', label: 'เฉพาะตาล่าสุด' },
+                            ] as const
+                          ).map((m) => (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => setLootViewMode(m.id)}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer ${
+                                lootViewMode === m.id
+                                  ? theme === 'mono'
+                                    ? 'bg-white text-zinc-950 border-white'
+                                    : 'bg-emerald-500/25 border-emerald-400/60 text-emerald-100'
+                                  : 'bg-black/35 border-white/10 text-zinc-400 hover:text-zinc-200'
+                              }`}
+                            >
+                              {m.label}
+                            </button>
+                          ))}
+                          <span className="text-zinc-600 mx-0.5">|</span>
+                          {(
+                            [
+                              { id: 'bot', label: `เฉพาะ ${activeAccount.bot_name}` },
+                              { id: 'all', label: 'รวมทุกบอท' },
+                            ] as const
+                          ).map((sc) => (
+                            <button
+                              key={sc.id}
+                              type="button"
+                              onClick={() => setLootScope(sc.id)}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer ${
+                                lootScope === sc.id
+                                  ? theme === 'mono'
+                                    ? 'bg-zinc-200 text-zinc-950 border-zinc-200'
+                                    : 'bg-red-500/25 border-red-400/60 text-red-100'
+                                  : 'bg-black/35 border-white/10 text-zinc-400 hover:text-zinc-200'
+                              }`}
+                            >
+                              {sc.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {[1, 24, 168].map((h) => (
+                            <button
+                              key={h}
+                              type="button"
+                              onClick={() => setHours(h)}
+                              className={`px-2 py-0.5 rounded-md text-[11px] font-semibold border cursor-pointer transition-colors ${
+                                hours === h
+                                  ? theme === 'mono'
+                                    ? 'bg-white text-zinc-950 border-white'
+                                    : 'bg-amber-500/25 border-amber-400/60 text-amber-100'
+                                  : 'bg-black/35 border-white/10 text-zinc-400 hover:text-zinc-200'
+                              }`}
+                            >
+                              {h === 1 ? '1 ชม.' : h === 24 ? '24 ชม.' : '7 วัน'}
+                            </button>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => setTab('history')}
+                            className="text-[11px] text-red-300 hover:text-white ml-1 cursor-pointer font-medium"
+                          >
+                            ดูทุกรอบ →
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {inventoryTab === 'units' && (
                       <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/5">
@@ -1872,9 +1822,87 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                     )}
                   </div>
 
-                  {/* Scrollable Inventory / Team / Recent Runs Area */}
+                  {/* Scrollable Gained Loot / Inventory / Team / Recent Runs Area */}
                   <div className="lg:flex-1 lg:min-h-0 lg:overflow-y-auto kage-scroll pr-1 space-y-4 pb-2">
-                  {inventoryTab === 'units' ? (
+                  {inventoryTab === 'gained' ? (
+                    activeBotRunStats.sortedLoot.length > 0 ? (
+                      <div
+                        key={`gained-${lootScope}-${lootViewMode}-${rarityFilter}-${hours}-${activeAccount.id}`}
+                        className="grid grid-cols-2 sm:grid-cols-3 gap-3.5"
+                      >
+                        {activeBotRunStats.sortedLoot.map((item, idx) => {
+                          const style = getRarityStyle(item.rarity, item.name);
+                          const icon = getRewardIcon(item);
+                          const denom = Math.max(1, activeBotRunStats.denominator || 1);
+                          const avg = item.amount / denom;
+                          const avgStr =
+                            avg >= 10 ? Math.round(avg).toLocaleString() : avg.toFixed(1);
+                          const dropPct = Math.round((item.runsWithDrop / denom) * 100);
+                          return (
+                            <div
+                              key={`${item.name}-${idx}`}
+                              style={{ animationDelay: `${Math.min(idx * 30, 240)}ms` }}
+                              className={`rounded-2xl border p-4 flex flex-col justify-between min-h-[156px] transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.01] animate-fade-slide ${style.card}`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-400/35 text-emerald-200">
+                                  {lootViewMode === 'latest'
+                                    ? 'ตาล่าสุด'
+                                    : `${avgStr}/ตา`}
+                                </span>
+                                <span className="text-xs font-extrabold px-2 py-0.5 rounded-lg bg-black/50 border border-white/15 text-white">
+                                  +{item.amount.toLocaleString()}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center justify-center py-2">
+                                {icon ? (
+                                  <img
+                                    src={icon}
+                                    alt={item.name}
+                                    className={`w-16 h-16 drop-shadow-[0_0_12px_rgba(220,38,38,0.4)] ${
+                                      icon.includes('dawn_coin')
+                                        ? 'rounded-full object-cover'
+                                        : 'rounded-xl object-contain'
+                                    }`}
+                                  />
+                                ) : (
+                                  <Sparkles className={`w-10 h-10 ${style.text}`} />
+                                )}
+                              </div>
+
+                              <div>
+                                <div className="text-xs font-bold text-white truncate">
+                                  {item.name}
+                                </div>
+                                <div className="flex items-center justify-between gap-2 mt-0.5">
+                                  <span className={`text-[11px] font-medium ${style.text}`}>
+                                    {item.category === 'unit' ? 'Unit Drop' : style.label}
+                                  </span>
+                                  <span className="text-[10px] text-zinc-300/90 font-medium">
+                                    {lootViewMode === 'latest'
+                                      ? activeBotRunStats.latestRun?.map_name || 'Latest'
+                                      : `${item.runsWithDrop}/${denom} ตา (${dropPct}%)`}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/70 p-6 text-center space-y-1.5 animate-fade-slide">
+                        <p className="text-xs font-semibold text-zinc-200">
+                          {activeBotRunStats.runCount === 0
+                            ? 'ยังไม่มีรอบที่จบบันทึกไว้ในช่วงเวลานี้'
+                            : 'รอบก่อนหน้ายังไม่มีรายการของดรอป (อัปเดตสคริปต์ MuMu เพื่อเริ่มเทียบของที่ได้ต่อตา)'}
+                        </p>
+                        <p className="text-[11px] text-zinc-400">
+                          หรือกดแท็บ <strong className="text-zinc-200">กระเป๋า / ยูนิต / ประตู</strong> ด้านบนเพื่อดูของในกระเป๋าได้ทันที
+                        </p>
+                      </div>
+                    )
+                  ) : inventoryTab === 'units' ? (
                     groupedUnits.length > 0 ? (
                       <div
                         key={`units-${unitFilter}-${rarityFilter}-${activeAccount.id}`}
