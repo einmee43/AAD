@@ -151,6 +151,9 @@ local cachedGcPortals = {}
 local cachedGcItems = {}
 local cachedGcUnits = {}
 local cachedTraitRerolls = nil
+local cachedTotalTraitRerolls = nil
+local cachedStarRemnants = nil
+local cachedBattlePass = nil
 local cachedProfileCur = {}
 local lastGcScanAt = 0
 local lastGcComplete = false
@@ -307,6 +310,9 @@ local function scanGcFullInventoryIfDue(force)
         local bestUnitContainer = nil
         local bestUnitCount = 0
 
+        local bpTierArrays = {}
+        local bpNamedContainers = {}
+
         for _, t in ipairs(getgc(true)) do
             if type(t) == "table" then
                 if rawget(t, "Eclipse Portal") or rawget(t, "Sky Portal") or rawget(t, "Lotus Scepter") then
@@ -319,7 +325,13 @@ local function scanGcFullInventoryIfDue(force)
                     profileTable = t
                 elseif rawget(t, "fairy_tail_shard") and rawget(t, "arrancar_mask") and type(rawget(t, "fairy_tail_shard")) == "number" then
                     bestNormalContainer = t
+                elseif type(rawget(t, "mana_october")) == "table" or type(rawget(t, "trion_november")) == "table" or type(rawget(t, "flower_june")) == "table" then
+                    table.insert(bpNamedContainers, t)
                 else
+                    local v1 = rawget(t, 1)
+                    if type(v1) == "table" and rawget(v1, "xp_required") ~= nil and rawget(v1, "normal_reward") ~= nil then
+                        table.insert(bpTierArrays, t)
+                    end
                     local k, firstVal = next(t)
                     if k ~= nil and type(firstVal) == "table" then
                         if rawget(firstVal, "item_id") and (rawget(firstVal, "uuid") or rawget(firstVal, "_unique_item_data")) then
@@ -546,11 +558,22 @@ local function scanGcFullInventoryIfDue(force)
         end)
 
         local profileCur = {}
+        local starRemSummary = nil
+        local battlePassSummary = nil
+        local totalTraitRerollsVal = nil
+
+        if type(normalContainer) == "table" then
+            local sLim = tonumber(rawget(normalContainer, "star_remnant_limited")) or 0
+            local sReg = tonumber(rawget(normalContainer, "star_remnant")) or 0
+            starRemSummary = { total = sLim + sReg, limited = sLim, regular = sReg }
+        end
+
         if type(profileTable) == "table" then
             local pg = tonumber(rawget(profileTable, "gem_amount"))
             local pgo = tonumber(rawget(profileTable, "gold_amount"))
             if pg then profileCur["Gems"] = pg end
             if pgo then profileCur["Gold"] = pgo end
+            totalTraitRerollsVal = tonumber(rawget(profileTable, "total_trait_rerolls"))
             local resTbl = rawget(profileTable, "resources")
             if type(resTbl) == "table" then
                 for rk, rv in pairs(resTbl) do
@@ -562,6 +585,136 @@ local function scanGcFullInventoryIfDue(force)
                     end
                 end
             end
+
+            -- Parse Battle Pass progress & seasons
+            local bpData = rawget(profileTable, "battlepass_data")
+            if type(bpData) == "table" then
+                local seasonsList = {}
+                local bestSeason = nil
+
+                local function countClaimed(tbl)
+                    if type(tbl) ~= "table" then return 0, {} end
+                    local c = 0
+                    local map = {}
+                    for ck, cv in pairs(tbl) do
+                        if cv then
+                            c = c + 1
+                            map[tostring(ck)] = true
+                        end
+                    end
+                    return c, map
+                end
+
+                for sid, sdata in pairs(bpData) do
+                    if type(sid) == "string" and type(sdata) == "table" then
+                        local xpNum = tonumber(rawget(sdata, "xp")) or 0
+                        local hasPrem = rawget(sdata, "has_premium") == true
+                        local ct = rawget(sdata, "claimed_tiers")
+                        local normCnt, normMap = countClaimed(type(ct) == "table" and rawget(ct, "normal") or nil)
+                        local premCnt, premMap = countClaimed(type(ct) == "table" and rawget(ct, "premium") or nil)
+                        local entry = {
+                            id = sid,
+                            name = prettifyId(sid),
+                            xp = math.floor(xpNum),
+                            has_premium = hasPrem,
+                            normal_claimed = normCnt,
+                            premium_claimed = premCnt,
+                            normMap = normMap,
+                            premMap = premMap,
+                        }
+                        if xpNum > 0 or hasPrem or normCnt > 0 then
+                            table.insert(seasonsList, {
+                                id = entry.id,
+                                name = entry.name,
+                                xp = entry.xp,
+                                has_premium = entry.has_premium,
+                                normal_claimed = entry.normal_claimed,
+                                premium_claimed = entry.premium_claimed,
+                            })
+                        end
+                        if not bestSeason or entry.xp > bestSeason.xp or (entry.xp == bestSeason.xp and entry.normal_claimed > bestSeason.normal_claimed) then
+                            bestSeason = entry
+                        end
+                    end
+                end
+
+                table.sort(seasonsList, function(a, b) return a.xp > b.xp end)
+
+                if bestSeason then
+                    -- Try matching tier definition table in GC for exact level, xp thresholds & reward preview
+                    local tierArr = nil
+                    for _, nc in ipairs(bpNamedContainers) do
+                        local sd = rawget(nc, bestSeason.id)
+                        if type(sd) == "table" then
+                            if type(rawget(sd, "tiers")) == "table" then tierArr = rawget(sd, "tiers")
+                            elseif type(rawget(sd, 1)) == "table" and rawget(rawget(sd, 1), "xp_required") ~= nil then tierArr = sd end
+                            if tierArr then break end
+                        end
+                    end
+                    if not tierArr and #bpTierArrays == 1 then
+                        tierArr = bpTierArrays[1]
+                    end
+
+                    local function describeReward(rw)
+                        if type(rw) ~= "table" then return nil end
+                        if tonumber(rw.gems) then return "Gems x" .. tostring(rw.gems) end
+                        if tonumber(rw.gold) then return "Gold x" .. tostring(rw.gold) end
+                        local iid = rawget(rw, "item_id")
+                        local uid = rawget(rw, "unit_id")
+                        local amt = tonumber(rawget(rw, "amount")) or 1
+                        if type(iid) == "string" then
+                            local d = itemDefs[iid]
+                            local nm = (type(d) == "table" and d.name) or nameById[iid] or prettifyId(iid)
+                            return amt > 1 and (nm .. " x" .. tostring(amt)) or nm
+                        elseif type(uid) == "string" then
+                            local d = unitDefs[uid]
+                            local nm = (type(d) == "table" and d.name) or prettifyId(uid)
+                            return amt > 1 and (nm .. " x" .. tostring(amt)) or nm
+                        end
+                        return nil
+                    end
+
+                    local maxLvl = 60
+                    local unlockedLvl = math.max(bestSeason.normal_claimed, bestSeason.premium_claimed)
+                    local parsedTiers = {}
+                    if type(tierArr) == "table" and #tierArr > 0 then
+                        maxLvl = #tierArr
+                        local calcUnlocked = 0
+                        for idx, tObj in ipairs(tierArr) do
+                            if type(tObj) == "table" then
+                                local xReq = tonumber(rawget(tObj, "xp_required")) or 0
+                                if bestSeason.xp >= xReq then
+                                    calcUnlocked = idx
+                                end
+                                table.insert(parsedTiers, {
+                                    tier = idx,
+                                    xp_req = xReq,
+                                    normal = describeReward(rawget(tObj, "normal_reward")),
+                                    premium = describeReward(rawget(tObj, "premium_reward")),
+                                    n_claimed = bestSeason.normMap[tostring(idx)] == true,
+                                    p_claimed = bestSeason.premMap[tostring(idx)] == true,
+                                })
+                            end
+                        end
+                        if calcUnlocked > unlockedLvl then
+                            unlockedLvl = calcUnlocked
+                        end
+                    end
+
+                    battlePassSummary = {
+                        season_id = bestSeason.id,
+                        season_name = bestSeason.name,
+                        xp = bestSeason.xp,
+                        has_premium = bestSeason.has_premium,
+                        level = unlockedLvl,
+                        max_level = maxLvl,
+                        normal_claimed = bestSeason.normal_claimed,
+                        premium_claimed = bestSeason.premium_claimed,
+                        tiers = parsedTiers,
+                        seasons = seasonsList,
+                    }
+                end
+            end
         end
 
         return {
@@ -569,6 +722,9 @@ local function scanGcFullInventoryIfDue(force)
             items = itemsMap,
             units = unitsList,
             traitRerolls = profileTable and tonumber(rawget(profileTable, "trait_reroll_tokens")) or nil,
+            totalTraitRerolls = totalTraitRerollsVal,
+            starRemnants = starRemSummary,
+            battlePass = battlePassSummary,
             profileCur = profileCur,
             complete = (type(normalContainer) == "table" and next(itemsMap) ~= nil),
         }
@@ -579,6 +735,9 @@ local function scanGcFullInventoryIfDue(force)
         if next(result.items) ~= nil then cachedGcItems = result.items end
         if #result.units > 0 then cachedGcUnits = result.units end
         if result.traitRerolls ~= nil then cachedTraitRerolls = result.traitRerolls end
+        if result.totalTraitRerolls ~= nil then cachedTotalTraitRerolls = result.totalTraitRerolls end
+        if result.starRemnants ~= nil then cachedStarRemnants = result.starRemnants end
+        if result.battlePass ~= nil then cachedBattlePass = result.battlePass end
         if type(result.profileCur) == "table" and next(result.profileCur) ~= nil then
             cachedProfileCur = result.profileCur
         end
@@ -588,6 +747,9 @@ local function scanGcFullInventoryIfDue(force)
             items = cachedGcItems,
             units = cachedGcUnits,
             traitRerolls = cachedTraitRerolls,
+            totalTraitRerolls = cachedTotalTraitRerolls,
+            starRemnants = cachedStarRemnants,
+            battlePass = cachedBattlePass,
             profileCur = cachedProfileCur,
             complete = lastGcComplete,
         }
@@ -925,6 +1087,24 @@ captureMatchBaseline(true)
 local lastQuickSync = 0
 local lastItemSig = ""
 
+local function attachProfileMetadata(cur, gcObj)
+    local rr = (type(gcObj) == "table" and gcObj.traitRerolls ~= nil) and gcObj.traitRerolls or cachedTraitRerolls
+    local totRr = (type(gcObj) == "table" and gcObj.totalTraitRerolls ~= nil) and gcObj.totalTraitRerolls or cachedTotalTraitRerolls
+    local srem = (type(gcObj) == "table" and type(gcObj.starRemnants) == "table") and gcObj.starRemnants or cachedStarRemnants
+    local bp = (type(gcObj) == "table" and type(gcObj.battlePass) == "table") and gcObj.battlePass or cachedBattlePass
+
+    if rr ~= nil then cur["Trait Reroll"] = rr end
+    if totRr ~= nil then cur["_total_trait_rerolls"] = totRr end
+    if type(srem) == "table" then
+        cur["Star Remnant"] = srem.total or 0
+        cur["_star_remnant_limited"] = srem.limited or 0
+        cur["_star_remnant_regular"] = srem.regular or 0
+    end
+    if type(bp) == "table" then
+        cur["_battlepass"] = bp
+    end
+end
+
 local function sendHeartbeatNow(itemsList, unitsOverride, completeOverride)
     local status, mode, mapName, waveStr = detectState()
     local cur, ready = readCurrencies()
@@ -947,6 +1127,8 @@ local function sendHeartbeatNow(itemsList, unitsOverride, completeOverride)
                 cur["Dawn Coins"] = it.amount
             end
         end
+
+        attachProfileMetadata(cur, nil)
 
         if gcComplete and not matchBaseline.hasItems and not sentForCurrentMatch then
             captureMatchBaseline(false)
@@ -1231,6 +1413,10 @@ task.spawn(function()
                             end
                         end
                     end
+                end
+
+                if endReady then
+                    attachProfileMetadata(endCurrencies, endGc)
                 end
 
                 postIngest({

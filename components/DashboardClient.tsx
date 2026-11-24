@@ -23,13 +23,17 @@ import {
   Code2,
   Contrast,
   Copy,
+  Crown,
+  ExternalLink,
   Flame,
   Heart,
   KeyRound,
+  Layers,
   LogOut,
   Plus,
   RefreshCw,
   Search,
+  Share2,
   Shield,
   Sparkles,
   Trash2,
@@ -43,6 +47,45 @@ interface UserInfo {
   id: string;
   name: string;
   avatar?: string;
+}
+
+interface DashboardClientProps {
+  user: UserInfo;
+  readOnly?: boolean;
+  shareToken?: string;
+  shareLabel?: string;
+  initialHours?: number;
+}
+
+interface BattlePassTier {
+  tier: number;
+  xp_req: number;
+  normal?: string | null;
+  premium?: string | null;
+  n_claimed?: boolean;
+  p_claimed?: boolean;
+}
+
+interface BattlePassSeason {
+  id: string;
+  name: string;
+  xp: number;
+  has_premium?: boolean;
+  normal_claimed?: number;
+  premium_claimed?: number;
+}
+
+interface BattlePassInfo {
+  season_id?: string;
+  season_name?: string;
+  xp?: number;
+  has_premium?: boolean;
+  level?: number;
+  max_level?: number;
+  normal_claimed?: number;
+  premium_claimed?: number;
+  tiers?: BattlePassTier[];
+  seasons?: BattlePassSeason[];
 }
 
 interface Account {
@@ -452,10 +495,16 @@ function getRarityStyle(rarity?: string, name?: string) {
   };
 }
 
-export default function DashboardClient({ user }: { user: UserInfo }) {
-  const [tab, setTab] = useState<'profile' | 'history' | 'keys'>('profile');
+export default function DashboardClient({
+  user,
+  readOnly = false,
+  shareToken,
+  shareLabel,
+  initialHours = 24,
+}: DashboardClientProps) {
+  const [tab, setTab] = useState<'profile' | 'overview' | 'history' | 'keys'>('profile');
   const [theme, setTheme] = useState<'kage' | 'mono'>('kage');
-  const [hours, setHours] = useState(24);
+  const [hours, setHours] = useState(initialHours);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [logs, setLogs] = useState<RunLog[]>([]);
@@ -465,7 +514,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   const [unitIconCache, setUnitIconCache] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
 
-  // Filters
+  // Filters & Modals
   const [inventoryTab, setInventoryTab] = useState<InventoryTab>('gained');
   const [unitFilter, setUnitFilter] = useState<'ALL' | 'shiny' | 'trait' | 'equipped'>('ALL');
   const [rarityFilter, setRarityFilter] = useState<
@@ -475,6 +524,14 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   const [portalTier, setPortalTier] = useState<string>('ALL');
   const [search, setSearch] = useState('');
   const [selectedUnitModal, setSelectedUnitModal] = useState<GroupedCollectionUnit | null>(null);
+  const [showBpModal, setShowBpModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareSelectedBots, setShareSelectedBots] = useState<string[]>([]);
+  const [shareOrderLabel, setShareOrderLabel] = useState('Nexty Shop • Live Farm');
+  const [shareHours, setShareHours] = useState(24);
+  const [generatedShareUrl, setGeneratedShareUrl] = useState<string | null>(null);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
   const [lootViewMode, setLootViewMode] = useState<'total' | 'latest'>('total');
   const [lootScope, setLootScope] = useState<'bot' | 'all'>('bot');
   const [botFilter, setBotFilter] = useState('ALL');
@@ -508,14 +565,17 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   const logsInitializedRef = useRef(false);
 
   const loadDashboard = useCallback(async () => {
-    const res = await fetch(`/api/dashboard?hours=${hours}`);
+    const endpoint = shareToken
+      ? `/api/share?token=${encodeURIComponent(shareToken)}&hours=${hours}`
+      : `/api/dashboard?hours=${hours}`;
+    const res = await fetch(endpoint);
     if (res.ok) {
       const data = await res.json();
       setAccounts(data.accounts || []);
       setLogs(data.run_logs || []);
       setSnapshots(data.snapshots || []);
     }
-  }, [hours]);
+  }, [hours, shareToken]);
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
@@ -527,19 +587,23 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   }, [loadDashboard]);
 
   const fetchKeys = useCallback(async () => {
+    if (readOnly) return;
     const res = await fetch('/api/keys');
     if (res.ok) {
       const data = await res.json();
       setKeys(data.keys || []);
     }
-  }, []);
+  }, [readOnly]);
 
   useEffect(() => {
     let cancelled = false;
     const runFetch = async () => {
+      const endpoint = shareToken
+        ? `/api/share?token=${encodeURIComponent(shareToken)}&hours=${hours}`
+        : `/api/dashboard?hours=${hours}`;
       const [dashRes, keysRes] = await Promise.all([
-        fetch(`/api/dashboard?hours=${hours}`),
-        fetch('/api/keys'),
+        fetch(endpoint),
+        readOnly ? Promise.resolve(null) : fetch('/api/keys'),
       ]);
       if (cancelled) return;
       if (dashRes.ok) {
@@ -548,7 +612,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
         setLogs(data.run_logs || []);
         setSnapshots(data.snapshots || []);
       }
-      if (keysRes.ok) {
+      if (keysRes && keysRes.ok) {
         const kData = await keysRes.json();
         setKeys(kData.keys || []);
       }
@@ -561,7 +625,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [hours, loadDashboard]);
+  }, [hours, loadDashboard, readOnly, shareToken]);
 
   // Theme persistence (Kage Crimson <-> Noir White/Black)
   useEffect(() => {
@@ -711,9 +775,39 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   };
 
   const handleClearLogs = async () => {
+    if (readOnly) return;
     if (!confirm('ลบประวัติ Run Logs ทั้งหมดใช่ไหมครับ?')) return;
     const res = await fetch('/api/dashboard?action=clear_logs', { method: 'DELETE' });
     if (res.ok) fetchDashboard();
+  };
+
+  const handleGenerateShareLink = async () => {
+    if (readOnly) return;
+    setShareBusy(true);
+    setShareError(null);
+    try {
+      const res = await fetch('/api/share', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          botNames: shareSelectedBots,
+          label: shareOrderLabel,
+          hours: shareHours,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.path) {
+        setShareError(data?.error || `สร้างลิงก์ไม่สำเร็จ (${res.status})`);
+      } else {
+        const url = `${originUrl}${data.path}`;
+        setGeneratedShareUrl(url);
+        navigator.clipboard?.writeText(url).catch(() => {});
+        setCopiedId('share-link-url');
+        setTimeout(() => setCopiedId(null), 2000);
+      }
+    } finally {
+      setShareBusy(false);
+    }
   };
 
   const copyText = (id: string, text: string) => {
@@ -729,7 +823,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   }, [snapshots]);
 
   const activeSnap = activeAccount ? snapshotMap.get(activeAccount.id) : undefined;
-  const activeCurrencies = activeSnap?.currencies || {};
+  const activeCurrencies = useMemo(() => activeSnap?.currencies || {}, [activeSnap]);
   const rawLevel = Number(activeCurrencies['_level']) || 0;
   const rawXp = Number(activeCurrencies['_xp']) || 0;
   const rawMaxXp = Number(activeCurrencies['_max_xp']) || 0;
@@ -743,6 +837,39 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
       : level > 0
       ? 100
       : 0;
+
+  const activeTraitRerolls = Number(activeCurrencies['Trait Reroll'] || 0);
+  const activeTotalRerolls = Number(activeCurrencies['_total_trait_rerolls'] || 0);
+  const activeStarRemLimited = Number(activeCurrencies['_star_remnant_limited'] || 0);
+  const activeStarRemRegular = Number(activeCurrencies['_star_remnant_regular'] || 0);
+  const activeStarRemnants =
+    Number(activeCurrencies['Star Remnant'] || 0) ||
+    activeStarRemLimited + activeStarRemRegular;
+  const activeBattlePass = (activeCurrencies['_battlepass'] as BattlePassInfo | undefined) || null;
+
+  const multiBotTotals = useMemo(() => {
+    let gems = 0;
+    let gold = 0;
+    let pearls = 0;
+    let dawnCoins = 0;
+    let traitRerolls = 0;
+    let starRemnants = 0;
+    let totalUnits = 0;
+    for (const acc of accounts) {
+      const c = snapshotMap.get(acc.id)?.currencies || {};
+      gems += Number(c['Gems'] || 0);
+      gold += Number(c['Gold'] || 0);
+      pearls += Number(c['Summer Pearls'] || 0);
+      dawnCoins += Number(c['Dawn Coins'] || 0);
+      traitRerolls += Number(c['Trait Reroll'] || 0);
+      starRemnants +=
+        Number(c['Star Remnant'] || 0) ||
+        Number(c['_star_remnant_limited'] || 0) + Number(c['_star_remnant_regular'] || 0);
+      const unitsArr = Array.isArray(c['_units']) ? (c['_units'] as CollectionUnit[]) : [];
+      totalUnits += unitsArr.reduce((s, u) => s + (Number(u.amount) || 1), 0);
+    }
+    return { gems, gold, pearls, dawnCoins, traitRerolls, starRemnants, totalUnits };
+  }, [accounts, snapshotMap]);
 
   const activeTeam: TeamUnit[] = useMemo(
     () =>
@@ -1107,19 +1234,51 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                 โปรไฟล์ &amp; คลัง
               </button>
               <button
+                onClick={() => setTab('overview')}
+                aria-current={tab === 'overview' ? 'page' : undefined}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>ภาพรวม ({accounts.length})</span>
+              </button>
+              <button
                 onClick={() => setTab('history')}
                 aria-current={tab === 'history' ? 'page' : undefined}
               >
                 ประวัติดรอป
               </button>
-              <button
-                onClick={() => setTab('keys')}
-                aria-current={tab === 'keys' ? 'page' : undefined}
-              >
-                <KeyRound className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">API Keys</span>
-              </button>
+              {!readOnly && (
+                <button
+                  onClick={() => setTab('keys')}
+                  aria-current={tab === 'keys' ? 'page' : undefined}
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">API Keys</span>
+                </button>
+              )}
             </nav>
+
+            {!readOnly && accounts.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setGeneratedShareUrl(null);
+                  setShareError(null);
+                  setShowShareModal(true);
+                }}
+                title="สร้างลิงก์แชร์แบบดูอย่างเดียวให้ลูกค้า"
+                className="aa-btn !px-3"
+              >
+                <Share2 className="w-3.5 h-3.5 text-emerald-300" />
+                <span className="hidden sm:inline text-xs">แชร์ลิงก์</span>
+              </button>
+            )}
+
+            {readOnly && (
+              <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/15 border border-emerald-400/35 text-emerald-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                {shareLabel || 'Live View'}
+              </span>
+            )}
 
             <div className="relative">
               <button
@@ -1213,13 +1372,15 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
               <span className="text-xs font-medium hidden md:inline text-red-100">
                 {user.name}
               </span>
-              <button
-                onClick={handleSignOut}
-                title="Sign out"
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-red-500/20 transition cursor-pointer"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
+              {!readOnly && (
+                <button
+                  onClick={handleSignOut}
+                  title="Sign out"
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-red-500/20 transition cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1378,63 +1539,165 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                   </div>
 
                   {/* Currency & Stats Grid */}
-                  <div className="grid grid-cols-2 gap-3 mb-4">
-                    <div className="rounded-xl border border-red-500/25 bg-[#12070a]/90 p-3.5 flex items-center gap-3">
-                      <img src="/icons/gems.png" alt="Gems" className="w-9 h-9 object-contain shrink-0" />
+                  <div className="grid grid-cols-2 gap-2.5 mb-3">
+                    <div className="rounded-xl border border-red-500/25 bg-[#12070a]/90 p-3 flex items-center gap-2.5">
+                      <img src="/icons/gems.png" alt="Gems" className="w-8 h-8 object-contain shrink-0" />
                       <div className="min-w-0">
                         <div className="text-[11px] text-zinc-400">เพชร (Gems)</div>
-                        <div className="text-base font-bold text-white truncate">
+                        <div className="text-sm font-bold text-white truncate">
                           {formatCompact(Number(activeCurrencies['Gems'] || 0))}
                         </div>
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-red-500/25 bg-[#12070a]/90 p-3.5 flex items-center gap-3">
+                    <div className="rounded-xl border border-red-500/25 bg-[#12070a]/90 p-3 flex items-center gap-2.5">
                       <img
                         src="/icons/pearls.png"
                         alt="Summer Pearls"
-                        className="w-9 h-9 object-contain shrink-0"
+                        className="w-8 h-8 object-contain shrink-0"
                       />
                       <div className="min-w-0">
                         <div className="text-[11px] text-zinc-400">SummerPearls</div>
-                        <div className="text-base font-bold text-pink-200 truncate">
+                        <div className="text-sm font-bold text-pink-200 truncate">
                           {formatCompact(Number(activeCurrencies['Summer Pearls'] || 0))}
                         </div>
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-red-500/25 bg-[#12070a]/90 p-3.5 flex items-center gap-3">
-                      <img src="/icons/gold.png" alt="Gold" className="w-9 h-9 object-contain shrink-0" />
+                    <div className="rounded-xl border border-red-500/25 bg-[#12070a]/90 p-3 flex items-center gap-2.5">
+                      <img src="/icons/gold.png" alt="Gold" className="w-8 h-8 object-contain shrink-0" />
                       <div className="min-w-0">
                         <div className="text-[11px] text-zinc-400">ทอง (Gold)</div>
-                        <div className="text-base font-bold text-amber-200 truncate">
+                        <div className="text-sm font-bold text-amber-200 truncate">
                           {Number(activeCurrencies['Gold'] || 0).toLocaleString()}
                         </div>
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-amber-500/35 bg-[#160a0d]/90 p-3.5 flex items-center gap-3">
+                    <div className="rounded-xl border border-amber-500/35 bg-[#160a0d]/90 p-3 flex items-center gap-2.5">
                       <img
                         src="/icons/dawn_coin.jpg"
                         alt="Dawn Coins"
-                        className="w-9 h-9 rounded-full object-cover shrink-0"
+                        className="w-8 h-8 rounded-full object-cover shrink-0"
                       />
                       <div className="min-w-0">
                         <div className="text-[11px] text-amber-300/80">Dawn Coins</div>
-                        <div className="text-base font-bold text-amber-300 truncate">
+                        <div className="text-sm font-bold text-amber-300 truncate">
                           {Number(activeCurrencies['Dawn Coins'] || 0).toLocaleString()}
                         </div>
                       </div>
                     </div>
 
-                    <div className="col-span-2 rounded-xl border border-red-500/25 bg-[#12070a]/90 p-3.5 flex items-center justify-between gap-3">
+                    <div
+                      title={
+                        activeTotalRerolls > 0
+                          ? `ใช้ Reroll ไปแล้วทั้งหมด ${activeTotalRerolls.toLocaleString()} ครั้ง`
+                          : undefined
+                      }
+                      className="rounded-xl border border-purple-500/35 bg-[#13091a]/90 p-3 flex items-center gap-2.5"
+                    >
+                      <img
+                        src="/item-icons/Reroll_Token.png"
+                        alt="Trait Reroll"
+                        className="w-8 h-8 object-contain shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <div className="text-[11px] text-purple-300/80">Trait Reroll</div>
+                        <div className="text-sm font-bold text-purple-200 truncate">
+                          {activeTraitRerolls.toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      title={`Limited: ${activeStarRemLimited.toLocaleString()} • ปกติ: ${activeStarRemRegular.toLocaleString()}`}
+                      className="rounded-xl border border-cyan-500/35 bg-[#09131a]/90 p-3 flex items-center gap-2.5"
+                    >
+                      <img
+                        src="/icons/star_remnant.png"
+                        alt="Star Remnant"
+                        className="w-8 h-8 object-contain shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <div className="text-[11px] text-cyan-300/80">Star Remnant</div>
+                        <div className="text-sm font-bold text-cyan-200 truncate">
+                          {activeStarRemnants.toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Battle Pass Compact Card (Click for Tier Details) */}
+                    <button
+                      type="button"
+                      onClick={() => activeBattlePass && setShowBpModal(true)}
+                      className={`col-span-2 rounded-xl border p-3 text-left transition ${
+                        activeBattlePass
+                          ? 'border-amber-400/35 bg-gradient-to-r from-[#1b1106]/95 to-[#12070a]/95 hover:border-amber-300/60 cursor-pointer'
+                          : 'border-white/10 bg-[#12070a]/60 cursor-default'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <Crown
+                            className={`w-4 h-4 shrink-0 ${
+                              activeBattlePass?.has_premium ? 'text-amber-400' : 'text-zinc-400'
+                            }`}
+                          />
+                          <span className="text-xs font-bold text-white truncate">
+                            {activeBattlePass?.season_name
+                              ? `Battle Pass • ${activeBattlePass.season_name}`
+                              : 'Battle Pass'}
+                          </span>
+                          {activeBattlePass?.has_premium && (
+                            <span className="text-[9.5px] font-extrabold px-1.5 py-0.5 rounded bg-amber-400/20 border border-amber-400/40 text-amber-200 shrink-0">
+                              PREMIUM
+                            </span>
+                          )}
+                        </div>
+                        {activeBattlePass ? (
+                          <span className="text-xs font-extrabold text-amber-300 shrink-0">
+                            {activeBattlePass.level || 0}/{activeBattlePass.max_level || 60}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-zinc-500">รอซิงค์จากสคริปต์</span>
+                        )}
+                      </div>
+                      {activeBattlePass && (
+                        <>
+                          <div className="h-1.5 rounded-full bg-black/50 overflow-hidden mb-1">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-400 transition-all"
+                              style={{
+                                width: `${Math.min(
+                                  100,
+                                  Math.round(
+                                    ((activeBattlePass.level || 0) /
+                                      Math.max(1, activeBattlePass.max_level || 60)) *
+                                      100
+                                  )
+                                )}%`,
+                              }}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between text-[10px] text-zinc-400">
+                            <span>{(activeBattlePass.xp || 0).toLocaleString()} XP</span>
+                            <span className="text-amber-300/90">
+                              รับแล้ว {activeBattlePass.normal_claimed || 0}/
+                              {activeBattlePass.max_level || 60} • กดดูรายละเอียด →
+                            </span>
+                          </div>
+                        </>
+                      )}
+                    </button>
+
+                    <div className="col-span-2 rounded-xl border border-red-500/25 bg-[#12070a]/90 p-3 flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-300 shrink-0">
+                        <div className="w-8 h-8 rounded-lg bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-300 shrink-0">
                           <Clock className="w-4 h-4" />
                         </div>
                         <div>
                           <div className="text-[11px] text-zinc-400">เวลาแมตช์ที่บันทึก</div>
-                          <div className="text-base font-bold text-white">
+                          <div className="text-sm font-bold text-white">
                             {formatDuration(analytics.totalSec)}
                           </div>
                         </div>
@@ -2272,6 +2535,310 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
           </>
         )}
 
+        {tab === 'overview' && (
+          <div className="space-y-5 animate-fade-slide">
+            {/* Multi-Bot Aggregate Shop KPIs */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
+                <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
+                  <span>บอทออนไลน์รวม</span>
+                  <Bot className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div className="text-2xl font-bold text-white">
+                  {analytics.onlineCount}{' '}
+                  <span className="text-sm font-normal text-zinc-500">/ {accounts.length}</span>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
+                <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
+                  <span>รวม Gems ทุกบอท</span>
+                  <img src="/icons/gems.png" alt="Gems" className="w-4 h-4 object-contain" />
+                </div>
+                <div className="text-2xl font-bold text-white">
+                  {formatCompact(multiBotTotals.gems)}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
+                <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
+                  <span>รวม Pearls ทุกบอท</span>
+                  <img src="/icons/pearls.png" alt="Pearls" className="w-4 h-4 object-contain" />
+                </div>
+                <div className="text-2xl font-bold text-pink-200">
+                  {formatCompact(multiBotTotals.pearls)}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-purple-500/30 bg-[#130816]/85 p-4">
+                <div className="flex items-center justify-between text-xs text-purple-300/80 mb-1">
+                  <span>รวม Trait Reroll</span>
+                  <img
+                    src="/item-icons/Reroll_Token.png"
+                    alt="Trait Reroll"
+                    className="w-4 h-4 object-contain"
+                  />
+                </div>
+                <div className="text-2xl font-bold text-purple-200">
+                  {multiBotTotals.traitRerolls.toLocaleString()}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-cyan-500/30 bg-[#08131a]/85 p-4">
+                <div className="flex items-center justify-between text-xs text-cyan-300/80 mb-1">
+                  <span>รวม Star Remnant</span>
+                  <img
+                    src="/icons/star_remnant.png"
+                    alt="Star Remnant"
+                    className="w-4 h-4 object-contain"
+                  />
+                </div>
+                <div className="text-2xl font-bold text-cyan-200">
+                  {multiBotTotals.starRemnants.toLocaleString()}
+                </div>
+              </div>
+            </div>
+
+            {/* Multi-Bot Comparison Table */}
+            <section className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 overflow-hidden">
+              <div className="p-4 border-b border-red-500/20 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-red-400" />
+                    ตารางสถานะบอททั้งหมด ({accounts.length} บัญชี)
+                  </h2>
+                  <p className="text-[11px] text-zinc-400 mt-0.5">
+                    กดที่แถวเพื่อสลับไปดูหน้าของที่ได้ &amp; กระเป๋าของบอทนั้นทันที
+                  </p>
+                </div>
+
+                {!readOnly && accounts.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    {shareSelectedBots.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShareSelectedBots([])}
+                        className="text-xs text-zinc-400 hover:text-white cursor-pointer"
+                      >
+                        ล้างที่เลือก ({shareSelectedBots.length})
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGeneratedShareUrl(null);
+                        setShareError(null);
+                        setShowShareModal(true);
+                      }}
+                      className="aa-btn aa-btn--primary !h-9 !px-3.5 text-xs"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                      <span>
+                        {shareSelectedBots.length > 0
+                          ? `แชร์ลิงก์ (${shareSelectedBots.length} บอท)`
+                          : 'สร้าง Share Link'}
+                      </span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {accounts.length === 0 ? (
+                <div className="p-8 text-center text-xs text-zinc-500">
+                  ยังไม่มีบอทเชื่อมต่อเข้ามา
+                </div>
+              ) : (
+                <div className="overflow-x-auto kage-scroll">
+                  <table className="w-full text-xs text-left whitespace-nowrap">
+                    <thead>
+                      <tr className="text-[11px] uppercase tracking-wider text-zinc-400 border-b border-white/10 bg-black/25">
+                        {!readOnly && <th className="py-3 px-3 w-8" />}
+                        <th className="py-3 px-3 font-semibold">สถานะ</th>
+                        <th className="py-3 px-3 font-semibold">บอท / ไอดี</th>
+                        <th className="py-3 px-3 font-semibold">Level</th>
+                        <th className="py-3 px-3 font-semibold">ด่าน / เวฟ</th>
+                        <th className="py-3 px-3 font-semibold">Gems</th>
+                        <th className="py-3 px-3 font-semibold">Pearls</th>
+                        <th className="py-3 px-3 font-semibold">Gold</th>
+                        <th className="py-3 px-3 font-semibold">Dawn</th>
+                        <th className="py-3 px-3 font-semibold">Reroll</th>
+                        <th className="py-3 px-3 font-semibold">Remnant</th>
+                        <th className="py-3 px-3 font-semibold">Battle Pass</th>
+                        <th className="py-3 px-3 font-semibold">ทีม &amp; คลัง</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {accounts.map((acc, idx) => {
+                        const snap = snapshotMap.get(acc.id);
+                        const cur = snap?.currencies || {};
+                        const accLvl = Number(cur['_level']) || 0;
+                        const accTeam = Array.isArray(cur['_team'])
+                          ? (cur['_team'] as TeamUnit[])
+                          : [];
+                        const accUnits = Array.isArray(cur['_units'])
+                          ? (cur['_units'] as CollectionUnit[])
+                          : [];
+                        const totalUnitsCnt = accUnits.reduce(
+                          (sum, u) => sum + (Number(u.amount) || 1),
+                          0
+                        );
+                        const rr = Number(cur['Trait Reroll'] || 0);
+                        const rem =
+                          Number(cur['Star Remnant'] || 0) ||
+                          Number(cur['_star_remnant_limited'] || 0) +
+                            Number(cur['_star_remnant_regular'] || 0);
+                        const bp = cur['_battlepass'] as BattlePassInfo | undefined;
+                        const isSelected = shareSelectedBots.includes(acc.bot_name);
+
+                        return (
+                          <tr
+                            key={acc.id}
+                            onClick={() => {
+                              setSelectedIdx(idx);
+                              setTab('profile');
+                            }}
+                            className="hover:bg-white/[0.04] cursor-pointer transition-colors"
+                          >
+                            {!readOnly && (
+                              <td
+                                className="py-3 px-3"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setShareSelectedBots((prev) =>
+                                    prev.includes(acc.bot_name)
+                                      ? prev.filter((b) => b !== acc.bot_name)
+                                      : [...prev, acc.bot_name]
+                                  );
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => {}}
+                                  className="w-3.5 h-3.5 rounded accent-red-500 cursor-pointer"
+                                  aria-label={`เลือก ${acc.bot_name}`}
+                                />
+                              </td>
+                            )}
+                            <td className="py-3 px-3">
+                              <span
+                                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[11px] font-semibold ${
+                                  acc.live_status === 'farming'
+                                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                                    : acc.live_status === 'lobby'
+                                    ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                                    : 'bg-rose-500/15 border-rose-500/40 text-rose-300'
+                                }`}
+                              >
+                                <span
+                                  className={`w-1.5 h-1.5 rounded-full ${
+                                    acc.live_status === 'farming'
+                                      ? 'bg-emerald-400 animate-pulse'
+                                      : acc.live_status === 'lobby'
+                                      ? 'bg-amber-400'
+                                      : 'bg-rose-500'
+                                  }`}
+                                />
+                                {acc.live_status === 'farming'
+                                  ? 'ฟาร์ม'
+                                  : acc.live_status === 'lobby'
+                                  ? 'Lobby'
+                                  : 'ออฟไลน์'}
+                                <span className="opacity-70">• {timeAgo(acc.last_heartbeat)}</span>
+                              </span>
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="font-bold text-white">{acc.bot_name}</div>
+                              <div className="text-[11px] text-zinc-400">
+                                {acc.roblox_username || '-'}
+                              </div>
+                            </td>
+                            <td className="py-3 px-3">
+                              {accLvl > 0 && accLvl < 999 ? (
+                                <span className="px-2 py-0.5 rounded-lg bg-sky-500/15 border border-sky-400/30 text-sky-200 font-bold">
+                                  Lv.{accLvl}
+                                </span>
+                              ) : (
+                                <span className="text-zinc-500">-</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="text-zinc-100 font-medium">
+                                {acc.current_map || 'Main Lobby'}
+                              </div>
+                              <div className="text-[11px] text-zinc-400">
+                                {acc.current_mode || 'Lobby'}
+                                {acc.current_wave && acc.current_wave !== '-'
+                                  ? ` • ${acc.current_wave}`
+                                  : ''}
+                              </div>
+                            </td>
+                            <td className="py-3 px-3 font-bold text-white">
+                              {formatCompact(Number(cur['Gems'] || 0))}
+                            </td>
+                            <td className="py-3 px-3 font-bold text-pink-200">
+                              {formatCompact(Number(cur['Summer Pearls'] || 0))}
+                            </td>
+                            <td className="py-3 px-3 font-semibold text-amber-200">
+                              {formatCompact(Number(cur['Gold'] || 0))}
+                            </td>
+                            <td className="py-3 px-3 font-semibold text-amber-300">
+                              {Number(cur['Dawn Coins'] || 0).toLocaleString()}
+                            </td>
+                            <td className="py-3 px-3 font-bold text-purple-200">
+                              {rr.toLocaleString()}
+                            </td>
+                            <td className="py-3 px-3 font-bold text-cyan-200">
+                              {rem.toLocaleString()}
+                            </td>
+                            <td className="py-3 px-3">
+                              {bp ? (
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[11px] font-bold ${
+                                    bp.has_premium
+                                      ? 'bg-amber-500/15 border-amber-400/40 text-amber-200'
+                                      : 'bg-white/5 border-white/10 text-zinc-200'
+                                  }`}
+                                >
+                                  {bp.has_premium && <Crown className="w-3 h-3 text-amber-300" />}
+                                  {bp.level || 0}/{bp.max_level || 60}
+                                </span>
+                              ) : (
+                                <span className="text-zinc-500">-</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="flex items-center gap-1.5">
+                                <div className="flex -space-x-1.5">
+                                  {accTeam.slice(0, 6).map((tu) => {
+                                    const img = getUnitPortrait(tu.name);
+                                    return img ? (
+                                      <img
+                                        key={tu.slot}
+                                        src={img}
+                                        alt={tu.name}
+                                        title={tu.name}
+                                        className="w-6 h-6 rounded-full border border-white/25 bg-[#12070a] object-cover"
+                                      />
+                                    ) : null;
+                                  })}
+                                </div>
+                                <span className="text-[11px] text-zinc-300 font-semibold">
+                                  {totalUnitsCnt > 0 ? `${totalUnitsCnt} ตัว` : ''}
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+
         {tab === 'history' && (
           <div className="space-y-5 animate-fade-slide">
             {/* Timeframe + Clear */}
@@ -2288,13 +2855,15 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                   </button>
                 ))}
               </div>
-              <button
-                onClick={handleClearLogs}
-                className="aa-btn aa-btn--danger"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                ล้างประวัติ
-              </button>
+              {!readOnly && (
+                <button
+                  onClick={handleClearLogs}
+                  className="aa-btn aa-btn--danger"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  ล้างประวัติ
+                </button>
+              )}
             </div>
 
             {/* KPI Cards */}
@@ -2568,7 +3137,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
           </div>
         )}
 
-        {tab === 'keys' && (
+        {tab === 'keys' && !readOnly && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <section className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-5 space-y-5">
               <div>
@@ -2925,6 +3494,312 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                 </>
               );
             })()}
+          </div>
+        </div>
+      )}
+
+      {/* Battle Pass Detail Modal */}
+      {showBpModal && activeBattlePass && (
+        <div
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setShowBpModal(false)}
+        >
+          <div
+            className="w-full max-w-2xl rounded-2xl border border-amber-400/35 bg-[#12090c]/95 shadow-2xl overflow-hidden animate-fade-slide"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-11 h-11 rounded-xl bg-amber-500/15 border border-amber-400/40 flex items-center justify-center shrink-0">
+                  <Crown className="w-6 h-6 text-amber-300" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-base font-bold text-white truncate">
+                      {activeBattlePass.season_name || 'Battle Pass'}
+                    </h3>
+                    {activeBattlePass.has_premium && (
+                      <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-amber-400/20 border border-amber-400/45 text-amber-200">
+                        ★ PREMIUM
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-zinc-400 mt-0.5">
+                    {activeAccount?.bot_name} • {(activeBattlePass.xp || 0).toLocaleString()} XP
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBpModal(false)}
+                className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white cursor-pointer"
+                aria-label="ปิดหน้าต่าง"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-5 space-y-4 max-h-[70vh] overflow-y-auto kage-scroll">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+                  <div className="text-[11px] text-zinc-400">ระดับปัจจุบัน</div>
+                  <div className="text-lg font-bold text-amber-300">
+                    {activeBattlePass.level || 0}/{activeBattlePass.max_level || 60}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+                  <div className="text-[11px] text-zinc-400">XP สะสม</div>
+                  <div className="text-lg font-bold text-white">
+                    {(activeBattlePass.xp || 0).toLocaleString()}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+                  <div className="text-[11px] text-zinc-400">รับสายฟรี</div>
+                  <div className="text-lg font-bold text-emerald-300">
+                    {activeBattlePass.normal_claimed || 0}/{activeBattlePass.max_level || 60}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+                  <div className="text-[11px] text-zinc-400">รับ Premium</div>
+                  <div className="text-lg font-bold text-amber-200">
+                    {activeBattlePass.has_premium
+                      ? `${activeBattlePass.premium_claimed || 0}/${activeBattlePass.max_level || 60}`
+                      : 'ยังไม่มี'}
+                  </div>
+                </div>
+              </div>
+
+              {Array.isArray(activeBattlePass.tiers) && activeBattlePass.tiers.length > 0 ? (
+                <table className="w-full text-xs text-left">
+                  <thead>
+                    <tr className="text-[11px] uppercase tracking-wider text-zinc-400 border-b border-white/10">
+                      <th className="pb-2 font-semibold">Tier</th>
+                      <th className="pb-2 font-semibold">XP</th>
+                      <th className="pb-2 font-semibold">สายฟรี</th>
+                      <th className="pb-2 font-semibold">Premium</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {activeBattlePass.tiers.map((t) => {
+                      const unlocked = (activeBattlePass.xp || 0) >= t.xp_req;
+                      return (
+                        <tr key={t.tier} className={unlocked ? 'bg-emerald-500/[0.03]' : 'opacity-65'}>
+                          <td className="py-2 font-bold text-white">Tier {t.tier}</td>
+                          <td className="py-2 text-zinc-400">{t.xp_req.toLocaleString()}</td>
+                          <td className="py-2">
+                            <span className="text-zinc-200">{t.normal || '-'}</span>
+                            {t.n_claimed && (
+                              <span className="ml-1.5 text-[10px] text-emerald-400 font-bold">
+                                ✓
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2">
+                            <span className="text-amber-200">{t.premium || '-'}</span>
+                            {t.p_claimed && (
+                              <span className="ml-1.5 text-[10px] text-amber-300 font-bold">
+                                ✓
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              ) : (
+                Array.isArray(activeBattlePass.seasons) &&
+                activeBattlePass.seasons.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold text-zinc-300">
+                      ประวัติซีซั่นที่มีความคืบหน้า (เปิดหน้า Battle Pass ในเกม 1 ครั้งหากต้องการซิงค์ตารางของรางวัลราย Tier)
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {activeBattlePass.seasons.map((s) => (
+                        <div
+                          key={s.id}
+                          className="rounded-xl border border-white/10 bg-black/30 p-3 flex items-center justify-between gap-2 text-xs"
+                        >
+                          <div>
+                            <div className="font-bold text-white">{s.name}</div>
+                            <div className="text-[11px] text-zinc-400">
+                              {s.xp.toLocaleString()} XP • รับแล้ว {s.normal_claimed || 0} Tier
+                            </div>
+                          </div>
+                          {s.has_premium && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-400/20 text-amber-200">
+                              PREMIUM
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Read-Only Share Link Generator Modal */}
+      {showShareModal && !readOnly && (
+        <div
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setShowShareModal(false)}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl border border-red-500/35 bg-[#12080c]/95 shadow-2xl overflow-hidden animate-fade-slide"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <Share2 className="w-5 h-5 text-emerald-300" />
+                <div>
+                  <h3 className="text-sm font-bold text-white">สร้างลิงก์แชร์ให้ลูกค้า (Read-Only)</h3>
+                  <p className="text-[11px] text-zinc-400">
+                    ลูกค้าเปิดดูของที่ได้ / ความคืบหน้าแบบสดๆ ได้ทันทีโดยไม่เห็น API Key
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowShareModal(false)}
+                className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-5 space-y-4 text-xs">
+              <div>
+                <label className="block text-zinc-400 mb-1.5">ชื่อร้าน / ชื่อออเดอร์ (โชว์ให้ลูกค้าเห็น)</label>
+                <input
+                  value={shareOrderLabel}
+                  onChange={(e) => setShareOrderLabel(e.target.value)}
+                  placeholder="เช่น Nexty Shop • Order คุณเอ"
+                  className="w-full px-3 py-2 rounded-xl bg-[#090506] border border-red-500/25 focus:outline-none focus:border-red-400 text-white"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-zinc-400">
+                    เลือกบอทที่ต้องการให้ลูกค้าดู ({shareSelectedBots.length === 0 ? 'ทุกบอท' : `${shareSelectedBots.length} บอท`})
+                  </span>
+                  {shareSelectedBots.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShareSelectedBots([])}
+                      className="text-red-300 hover:text-white cursor-pointer"
+                    >
+                      เลือกทั้งหมด
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {accounts.map((a) => {
+                    const active = shareSelectedBots.includes(a.bot_name);
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() =>
+                          setShareSelectedBots((prev) =>
+                            prev.includes(a.bot_name)
+                              ? prev.filter((b) => b !== a.bot_name)
+                              : [...prev, a.bot_name]
+                          )
+                        }
+                        className={`px-2.5 py-1 rounded-lg border font-semibold cursor-pointer transition ${
+                          active
+                            ? 'bg-emerald-500/25 border-emerald-400/60 text-emerald-100'
+                            : 'bg-black/40 border-white/10 text-zinc-300 hover:border-white/25'
+                        }`}
+                      >
+                        {a.bot_name} ({a.roblox_username || '?'})
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-zinc-400 mb-1.5">ช่วงเวลาเริ่มต้นสำหรับนับของที่ได้</label>
+                <div className="flex gap-2">
+                  {[1, 24, 168].map((h) => (
+                    <button
+                      key={h}
+                      type="button"
+                      onClick={() => setShareHours(h)}
+                      className={`px-3 py-1.5 rounded-lg border font-semibold cursor-pointer ${
+                        shareHours === h
+                          ? 'bg-white text-zinc-950 border-white'
+                          : 'bg-black/40 border-white/10 text-zinc-300'
+                      }`}
+                    >
+                      {h === 1 ? '1 ชม.' : h === 24 ? '24 ชม.' : '7 วัน'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {shareError && (
+                <div className="rounded-xl border border-rose-500/35 bg-rose-500/10 p-2.5 text-rose-300">
+                  {shareError}
+                </div>
+              )}
+
+              {generatedShareUrl && (
+                <div className="rounded-xl border border-emerald-500/35 bg-emerald-950/25 p-3 space-y-2">
+                  <div className="font-semibold text-emerald-300 flex items-center justify-between">
+                    <span>ลิงก์แชร์พร้อมส่งให้ลูกค้าแล้ว!</span>
+                    <a
+                      href={generatedShareUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-white hover:underline"
+                    >
+                      เปิดดูตัวอย่าง <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      readOnly
+                      value={generatedShareUrl}
+                      onFocus={(e) => e.currentTarget.select()}
+                      className="flex-1 px-2.5 py-1.5 rounded-lg bg-black/50 border border-white/10 font-mono text-[11px] text-zinc-200"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => copyText('share-link-url', generatedShareUrl)}
+                      className="px-3 py-1.5 rounded-lg bg-white text-zinc-950 font-bold cursor-pointer shrink-0"
+                    >
+                      {copiedId === 'share-link-url' ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setShowShareModal(false)}
+                  className="aa-btn !h-9 !px-4"
+                >
+                  ปิด
+                </button>
+                <button
+                  type="button"
+                  disabled={shareBusy}
+                  onClick={handleGenerateShareLink}
+                  className="aa-btn aa-btn--primary !h-9 !px-4 disabled:opacity-50"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>{shareBusy ? 'กำลังสร้าง...' : 'สร้าง & คัดลอกลิงก์'}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
