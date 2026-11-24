@@ -18,6 +18,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Code2,
   Contrast,
   Copy,
   Flame,
@@ -279,6 +280,8 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   const [webhookDrafts, setWebhookDrafts] = useState<Record<string, string>>({});
   const [savingWebhookId, setSavingWebhookId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [scriptBotName, setScriptBotName] = useState('Bot 1');
+  const [selectedKeyId, setSelectedKeyId] = useState<string | null>(null);
   const [keyError, setKeyError] = useState<string | null>(null);
 
   // In-web notifications
@@ -1823,6 +1826,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                 </h3>
                 {keys.map((k) => {
                   const draft = webhookDrafts[k.id] ?? (k.discord_webhook_url || '');
+                  const fullScript = `getgenv().AA_TRACKER_CONFIG = {\n    API_URL  = "${originUrl}/api/ingest",\n    API_KEY  = "${k.api_key}",\n    BOT_NAME = "${scriptBotName}"\n}\nloadstring(game:HttpGet("https://raw.githubusercontent.com/einmee43/AAD/main/aa_tracker.lua?v=" .. tostring(os.time())))()`;
                   return (
                     <div
                       key={k.id}
@@ -1838,6 +1842,27 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                           </div>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedKeyId(k.id);
+                              copyText(`script-${k.id}`, fullScript);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-100 hover:bg-white text-zinc-900 text-xs font-semibold shadow-sm transition active:scale-95 cursor-pointer"
+                            title="คัดลอกสคริปต์ Lua พร้อมคีย์นี้"
+                          >
+                            {copiedId === `script-${k.id}` ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[2.5]" />
+                                <span>Copied</span>
+                              </>
+                            ) : (
+                              <>
+                                <Code2 className="w-3.5 h-3.5 stroke-[2.2]" />
+                                <span>Get Script</span>
+                              </>
+                            )}
+                          </button>
                           <button
                             onClick={() => copyText(k.id, k.api_key)}
                             className="p-2 rounded-lg bg-[#1a0b0f] hover:bg-red-500/20 text-zinc-300 cursor-pointer"
@@ -1884,18 +1909,58 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
             </section>
 
             <section className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-5 space-y-4">
-              <h2 className="text-base font-semibold">โค้ดสำหรับรันใน MuMu (6 บรรทัด)</h2>
-              <p className="text-xs text-zinc-400">
-                ก๊อปโค้ดนี้ไปรันใน Executor หรือวางในโฟลเดอร์ <code>autoexec</code> ได้เลย:
-              </p>
-              <pre className="rounded-xl bg-[#090506] border border-red-500/25 p-4 text-xs font-mono text-emerald-300 overflow-x-auto">
-{`getgenv().AA_TRACKER_CONFIG = {
-    API_URL  = "${originUrl}/api/ingest",
-    API_KEY  = "${keys[0]?.api_key || 'PASTE_YOUR_API_KEY_HERE'}",
-    BOT_NAME = "Bot 1" -- จอ 2 เปลี่ยนเป็น "Bot 2"
-}
-loadstring(game:HttpGet("https://raw.githubusercontent.com/einmee43/AAD/main/aa_tracker.lua?v=" .. tostring(os.time())))()`}
-              </pre>
+              {(() => {
+                const activeKey = keys.find((k) => k.id === selectedKeyId) || keys[0];
+                const scriptStr = `getgenv().AA_TRACKER_CONFIG = {\n    API_URL  = "${originUrl}/api/ingest",\n    API_KEY  = "${activeKey?.api_key || 'PASTE_YOUR_API_KEY_HERE'}",\n    BOT_NAME = "${scriptBotName}"\n}\nloadstring(game:HttpGet("https://raw.githubusercontent.com/einmee43/AAD/main/aa_tracker.lua?v=" .. tostring(os.time())))()`;
+                return (
+                  <>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h2 className="text-base font-semibold">โค้ดสำหรับรันใน MuMu (6 บรรทัด)</h2>
+                        <p className="text-xs text-zinc-400 mt-1">
+                          ก๊อปโค้ดนี้ไปรันใน Executor หรือวางในโฟลเดอร์ <code>autoexec</code> ได้เลย:
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {(['Bot 1', 'Bot 2', 'Bot 3'] as const).map((b) => (
+                          <button
+                            key={b}
+                            type="button"
+                            onClick={() => setScriptBotName(b)}
+                            className={`px-2.5 py-1 rounded-full text-xs font-semibold border cursor-pointer transition ${
+                              scriptBotName === b
+                                ? 'bg-white text-zinc-900 border-white'
+                                : 'bg-black/40 border-white/15 text-zinc-300 hover:text-white'
+                            }`}
+                          >
+                            {b}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => copyText('main-script', scriptStr)}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-zinc-100 hover:bg-white text-zinc-900 text-xs font-semibold shadow-sm transition active:scale-95 cursor-pointer"
+                        >
+                          {copiedId === 'main-script' ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[2.5]" />
+                              <span>Copied</span>
+                            </>
+                          ) : (
+                            <>
+                              <Code2 className="w-3.5 h-3.5 stroke-[2.2]" />
+                              <span>Get Script</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                    <pre className="rounded-xl bg-[#090506] border border-red-500/25 p-4 text-xs font-mono text-emerald-300 overflow-x-auto">
+                      {scriptStr}
+                    </pre>
+                  </>
+                );
+              })()}
             </section>
           </div>
         )}
