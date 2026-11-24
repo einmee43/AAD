@@ -150,6 +150,7 @@ end
 local cachedGcPortals = {}
 local cachedGcItems = {}
 local cachedGcUnits = {}
+local cachedTraitRerolls = nil
 local lastGcScanAt = 0
 local lastGcComplete = false
 local cachedUnitDefs = nil
@@ -547,6 +548,7 @@ local function scanGcFullInventoryIfDue(force)
             portals = portalsMap,
             items = itemsMap,
             units = unitsList,
+            traitRerolls = profileTable and tonumber(rawget(profileTable, "trait_reroll_tokens")) or nil,
             complete = (type(normalContainer) == "table" and next(itemsMap) ~= nil),
         }
     end)
@@ -555,11 +557,13 @@ local function scanGcFullInventoryIfDue(force)
         if next(result.portals) ~= nil then cachedGcPortals = result.portals end
         if next(result.items) ~= nil then cachedGcItems = result.items end
         if #result.units > 0 then cachedGcUnits = result.units end
+        if result.traitRerolls ~= nil then cachedTraitRerolls = result.traitRerolls end
         lastGcComplete = result.complete == true
         return {
             portals = cachedGcPortals,
             items = cachedGcItems,
             units = cachedGcUnits,
+            traitRerolls = cachedTraitRerolls,
             complete = lastGcComplete,
         }
     end
@@ -801,10 +805,88 @@ local function detectState()
     return status, mode, mapName, waveStr
 end
 
--- Wait for _stats to load before taking initial snapshot (prevents reporting total balance as 1-run reward)
+-- Wait for _stats + RAM inventory to load before taking initial match baseline
 local startCurrencies, statsReady = readCurrencies()
 local matchStartTime = os.time()
 local sentForCurrentMatch = false
+local matchBaseline = {
+    currencies = {},
+    itemsByName = {},
+    unitsByName = {},
+    traitRerolls = nil,
+    hasItems = false,
+    hasUnits = false,
+}
+
+local function captureMatchBaseline(forceScan)
+    local cur, ready = readCurrencies()
+    local gcRes = scanGcFullInventoryIfDue(forceScan == true)
+    if gcRes and type(gcRes.items) == "table" then
+        for _, it in pairs(gcRes.items) do
+            if it.name and it.name:lower():find("dawn coin") then
+                cur["Dawn Coins"] = it.amount
+                break
+            end
+        end
+    end
+    if ready then
+        startCurrencies = cur
+        statsReady = true
+        matchBaseline.currencies = cur
+    end
+    if gcRes then
+        if gcRes.traitRerolls ~= nil then
+            matchBaseline.traitRerolls = gcRes.traitRerolls
+        end
+        if gcRes.complete then
+            local imap = {}
+            local anyItem = false
+            for _, it in pairs(gcRes.portals or {}) do
+                if it.name and tonumber(it.amount) then
+                    anyItem = true
+                    local prev = imap[it.name]
+                    if not prev then
+                        imap[it.name] = { amount = it.amount, category = it.category or "portal", rarity = it.rarity or "Mythic" }
+                    else
+                        prev.amount = prev.amount + it.amount
+                    end
+                end
+            end
+            for _, it in pairs(gcRes.items or {}) do
+                if it.name and tonumber(it.amount) then
+                    anyItem = true
+                    local prev = imap[it.name]
+                    if not prev then
+                        imap[it.name] = { amount = it.amount, category = it.category or "material", rarity = it.rarity or "Legendary" }
+                    else
+                        prev.amount = prev.amount + it.amount
+                    end
+                end
+            end
+            if anyItem then
+                matchBaseline.itemsByName = imap
+                matchBaseline.hasItems = true
+            end
+        end
+        if type(gcRes.units) == "table" and #gcRes.units > 0 then
+            local umap = {}
+            for _, u in ipairs(gcRes.units) do
+                if u.name and tonumber(u.amount) then
+                    local prev = umap[u.name]
+                    if not prev then
+                        umap[u.name] = { amount = u.amount, rarity = u.rarity or "Mythic" }
+                    else
+                        prev.amount = prev.amount + u.amount
+                    end
+                end
+            end
+            matchBaseline.unitsByName = umap
+            matchBaseline.hasUnits = true
+        end
+    end
+end
+
+captureMatchBaseline(true)
 
 -- 1. Heartbeat loop (every 45s) + Fast watcher when Items GUI is open
 local lastQuickSync = 0
@@ -814,8 +896,7 @@ local function sendHeartbeatNow(itemsList, unitsOverride, completeOverride)
     local status, mode, mapName, waveStr = detectState()
     local cur, ready = readCurrencies()
     if ready and not statsReady then
-        startCurrencies = cur
-        statsReady = true
+        captureMatchBaseline(false)
     end
     if ready then
         local usefulItems, gcUnits, gcComplete
@@ -832,6 +913,10 @@ local function sendHeartbeatNow(itemsList, unitsOverride, completeOverride)
             if it.name and it.name:lower():find("dawn coin") then
                 cur["Dawn Coins"] = it.amount
             end
+        end
+
+        if gcComplete and not matchBaseline.hasItems and not sentForCurrentMatch then
+            captureMatchBaseline(false)
         end
 
         local equippedTeam = readEquippedTeam()
@@ -913,32 +998,130 @@ task.spawn(function()
             local resultsUI = pg:FindFirstChild("ResultsUI")
             if resultsUI and resultsUI.Enabled and not sentForCurrentMatch then
                 sentForCurrentMatch = true
-                -- Wait 3.5s for server to finish crediting _stats after ResultsUI opens (especially Dungeon Rooms)
+                -- Wait 3.5s for server to finish crediting _stats & RAM inventory after ResultsUI opens
                 task.wait(3.5)
                 local duration = math.max(1, os.time() - matchStartTime)
                 local _, mode, mapName, _ = detectState()
                 local endCurrencies, endReady = readCurrencies()
+                local endGc = scanGcFullInventoryIfDue(true)
+                local endItemsList = nil
+                if endGc then
+                    endItemsList = {}
+                    for _, it in pairs(endGc.portals or {}) do
+                        table.insert(endItemsList, it)
+                    end
+                    for _, it in pairs(endGc.items or {}) do
+                        if it.name and it.name:lower():find("dawn coin") then
+                            endCurrencies["Dawn Coins"] = it.amount
+                        end
+                        table.insert(endItemsList, it)
+                    end
+                end
 
                 local rewards = {}
                 local seenRewardNames = {}
                 if statsReady and endReady then
                     for k, endVal in pairs(endCurrencies) do
                         if string.sub(k, 1, 1) ~= "_" then
-                            local diff = endVal - (startCurrencies[k] or endVal)
-                            if diff > 0 then
-                                seenRewardNames[k:lower()] = true
-                                table.insert(rewards, {
-                                    name = k,
-                                    amount = diff,
-                                    category = "currency",
-                                    rarity = "common"
-                                })
+                            local baseVal = matchBaseline.currencies[k]
+                            if baseVal ~= nil then
+                                local diff = endVal - baseVal
+                                if diff > 0 then
+                                    seenRewardNames[k:lower()] = true
+                                    table.insert(rewards, {
+                                        name = k,
+                                        amount = diff,
+                                        category = "currency",
+                                        rarity = k:lower():find("dawn") and "Mythic" or "common"
+                                    })
+                                end
                             end
                         end
                     end
                 end
 
-                -- Scan ResultsUI labels for Win/Lose, LevelName, and Dungeon/Item Drops
+                -- Diff Trait Rerolls directly from RAM profile
+                if matchBaseline.traitRerolls ~= nil and endGc and endGc.traitRerolls ~= nil then
+                    local rrDiff = endGc.traitRerolls - matchBaseline.traitRerolls
+                    if rrDiff > 0 then
+                        seenRewardNames["trait reroll"] = true
+                        table.insert(rewards, {
+                            name = "Trait Reroll",
+                            amount = rrDiff,
+                            category = "material",
+                            rarity = "Mythic"
+                        })
+                    end
+                end
+
+                -- Diff ALL inventory items (Stars, Materials, Relics, Portals, Keys, Skins, XP Food) gained during the match
+                if matchBaseline.hasItems and endGc and endGc.complete then
+                    local endMap = {}
+                    for _, it in pairs(endGc.portals or {}) do
+                        if it.name and tonumber(it.amount) then
+                            local prev = endMap[it.name]
+                            if not prev then
+                                endMap[it.name] = { amount = it.amount, category = it.category or "portal", rarity = it.rarity or "Mythic" }
+                            else
+                                prev.amount = prev.amount + it.amount
+                            end
+                        end
+                    end
+                    for _, it in pairs(endGc.items or {}) do
+                        if it.name and tonumber(it.amount) then
+                            local prev = endMap[it.name]
+                            if not prev then
+                                endMap[it.name] = { amount = it.amount, category = it.category or "material", rarity = it.rarity or "Legendary" }
+                            else
+                                prev.amount = prev.amount + it.amount
+                            end
+                        end
+                    end
+                    for dispName, info in pairs(endMap) do
+                        local baseAmt = (matchBaseline.itemsByName[dispName] and matchBaseline.itemsByName[dispName].amount) or 0
+                        local diff = info.amount - baseAmt
+                        local low = dispName:lower()
+                        if diff > 0 and not seenRewardNames[low] and not low:find("dawn coin") then
+                            seenRewardNames[low] = true
+                            table.insert(rewards, {
+                                name = dispName,
+                                amount = diff,
+                                category = info.category,
+                                rarity = info.rarity
+                            })
+                        end
+                    end
+                end
+
+                -- Diff newly obtained Units gained during the match
+                if matchBaseline.hasUnits and endGc and type(endGc.units) == "table" and #endGc.units > 0 then
+                    local endUmap = {}
+                    for _, u in ipairs(endGc.units) do
+                        if u.name and tonumber(u.amount) then
+                            local prev = endUmap[u.name]
+                            if not prev then
+                                endUmap[u.name] = { amount = u.amount, rarity = u.rarity or "Mythic" }
+                            else
+                                prev.amount = prev.amount + u.amount
+                            end
+                        end
+                    end
+                    for uName, info in pairs(endUmap) do
+                        local baseAmt = (matchBaseline.unitsByName[uName] and matchBaseline.unitsByName[uName].amount) or 0
+                        local diff = info.amount - baseAmt
+                        if diff > 0 and not seenRewardNames[uName:lower()] then
+                            seenRewardNames[uName:lower()] = true
+                            table.insert(rewards, {
+                                name = uName,
+                                amount = diff,
+                                category = "unit",
+                                rarity = info.rarity
+                            })
+                        end
+                    end
+                end
+
+                -- Scan ResultsUI labels for Win/Lose, LevelName, and any UI-only drops
                 local resultStatus = "Win"
                 for _, obj in ipairs(resultsUI:GetDescendants()) do
                     if obj:IsA("TextLabel") and obj.Visible and #obj.Text > 0 then
@@ -960,7 +1143,7 @@ task.spawn(function()
                     elseif obj:IsA("Frame") or obj:IsA("ImageButton") or obj:IsA("ImageLabel") then
                         -- Only treat as an item drop if it has an explicit item name + quantity label
                         local nLbl = obj:FindFirstChild("name", true) or obj:FindFirstChild("ItemName", true)
-                        local qLbl = obj:FindFirstChild("Amount", true) or obj:FindFirstChild("Quantity", true) or obj:FindFirstChild("RewardQuantity", true)
+                        local qLbl = obj:FindFirstChild("Amount", true) or obj:FindFirstChild("Quantity", true) or obj:FindFirstChild("RewardQuantity", true) or obj:FindFirstChild("Count", true)
                         if nLbl and qLbl and nLbl:IsA("TextLabel") and qLbl:IsA("TextLabel") and #nLbl.Text > 0 and nLbl.Visible then
                             local itemName = nLbl.Text
                             local lowName = itemName:lower()
@@ -993,15 +1176,17 @@ task.spawn(function()
                     result = resultStatus,
                     duration_sec = duration,
                     rewards = rewards,
-                    currencies = endReady and endCurrencies or nil
+                    currencies = endReady and endCurrencies or nil,
+                    items = endItemsList,
+                    items_complete = endGc and endGc.complete or false,
+                    units = (endGc and type(endGc.units) == "table" and #endGc.units > 0) and endGc.units or nil,
+                    team = readEquippedTeam()
                 })
             elseif resultsUI and not resultsUI.Enabled and sentForCurrentMatch then
-                -- Reset for next round (e.g. Replay pressed)
+                -- Reset baseline cleanly for next round (Replay pressed)
                 sentForCurrentMatch = false
                 matchStartTime = os.time()
-                local cur, ready = readCurrencies()
-                startCurrencies = cur
-                statsReady = ready
+                captureMatchBaseline(true)
             end
         end)
         task.wait(2)

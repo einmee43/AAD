@@ -444,6 +444,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
   const [portalTier, setPortalTier] = useState<string>('ALL');
   const [search, setSearch] = useState('');
   const [selectedUnitModal, setSelectedUnitModal] = useState<GroupedCollectionUnit | null>(null);
+  const [lootViewMode, setLootViewMode] = useState<'latest' | 'avg' | 'total'>('latest');
   const [botFilter, setBotFilter] = useState('ALL');
   const [resultFilter, setResultFilter] = useState('ALL');
 
@@ -730,6 +731,17 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
     [unitIconCache]
   );
 
+  const getRewardIcon = useCallback(
+    (item: RewardItem) => {
+      if ((item.category || '').toLowerCase() === 'unit') {
+        const up = getUnitPortrait(item.name);
+        if (up) return up;
+      }
+      return getItemIcon(item.name) || getUnitPortrait(item.name) || null;
+    },
+    [getUnitPortrait]
+  );
+
   const unitStats = useMemo(() => {
     let total = 0;
     let shiny = 0;
@@ -906,7 +918,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
     });
   }, [logs, botFilter, resultFilter, search]);
 
-  // Analytics
+  // Analytics (overall + per-bot + per-run averages)
   const analytics = useMemo(() => {
     const totalRuns = logs.length;
     const wins = logs.filter((l) => l.result === 'Win').length;
@@ -914,21 +926,113 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
     const totalSec = logs.reduce((acc, l) => acc + (l.duration_sec || 0), 0);
     const avgSec = totalRuns > 0 ? Math.round(totalSec / totalRuns) : 0;
 
-    const lootTotals: Record<string, number> = {};
+    const lootTotals: Record<string, { amount: number; category?: string; rarity?: string }> = {};
     for (const log of logs) {
       for (const r of log.rewards || []) {
         if (isJunkReward(r.name)) continue;
-        lootTotals[r.name] = (lootTotals[r.name] || 0) + (Number(r.amount) || 0);
+        const prev = lootTotals[r.name];
+        const amt = Number(r.amount) || 0;
+        if (!prev) {
+          lootTotals[r.name] = { amount: amt, category: r.category, rarity: r.rarity };
+        } else {
+          prev.amount += amt;
+        }
       }
     }
 
-    const totalHours = Math.max(1 / 60, hours);
-    const gemsPerHr = Math.round((lootTotals['Gems'] || 0) / totalHours);
-    const pearlsPerHr = Math.round((lootTotals['Summer Pearls'] || 0) / totalHours);
+    const activeHours = totalSec > 0 ? Math.max(1 / 60, totalSec / 3600) : Math.max(1 / 60, hours);
+    const gemsTotal = lootTotals['Gems']?.amount || 0;
+    const pearlsTotal = lootTotals['Summer Pearls']?.amount || 0;
+    const gemsPerHr = Math.round(gemsTotal / activeHours);
+    const pearlsPerHr = Math.round(pearlsTotal / activeHours);
+    const gemsPerRun = totalRuns > 0 ? Math.round((gemsTotal / totalRuns) * 10) / 10 : 0;
+    const pearlsPerRun = totalRuns > 0 ? Math.round((pearlsTotal / totalRuns) * 10) / 10 : 0;
     const onlineCount = accounts.filter((a) => a.live_status !== 'offline').length;
 
-    return { totalRuns, winrate, totalSec, avgSec, lootTotals, gemsPerHr, pearlsPerHr, onlineCount };
+    return {
+      totalRuns,
+      winrate,
+      totalSec,
+      avgSec,
+      lootTotals,
+      gemsPerHr,
+      pearlsPerHr,
+      gemsPerRun,
+      pearlsPerRun,
+      onlineCount,
+    };
   }, [logs, accounts, hours]);
+
+  const activeBotRunStats = useMemo(() => {
+    const botName = activeAccount?.bot_name;
+    const targetLogs = botName ? logs.filter((l) => l.bot_name === botName) : logs;
+    const scoped = targetLogs.length > 0 ? targetLogs : logs;
+    const latestRun = scoped[0] || null;
+    const runCount = scoped.length;
+    const mapTotals: Record<
+      string,
+      { name: string; amount: number; runsWithDrop: number; category?: string; rarity?: string }
+    > = {};
+
+    for (const log of scoped) {
+      const seenThisRun = new Set<string>();
+      for (const r of log.rewards || []) {
+        if (isJunkReward(r.name)) continue;
+        const amt = Number(r.amount) || 0;
+        if (amt <= 0) continue;
+        const key = r.name.toLowerCase();
+        if (!mapTotals[key]) {
+          mapTotals[key] = {
+            name: r.name,
+            amount: 0,
+            runsWithDrop: 0,
+            category: r.category,
+            rarity: r.rarity,
+          };
+        }
+        mapTotals[key].amount += amt;
+        if (!seenThisRun.has(key)) {
+          seenThisRun.add(key);
+          mapTotals[key].runsWithDrop += 1;
+        }
+      }
+    }
+
+    const sortedLoot = Object.values(mapTotals).sort((a, b) => b.amount - a.amount);
+    return { latestRun, runCount, sortedLoot };
+  }, [logs, activeAccount?.bot_name]);
+
+  const filteredLootSummary = useMemo(() => {
+    const runCount = filteredLogs.length;
+    const map: Record<
+      string,
+      { name: string; amount: number; runsWithDrop: number; category?: string; rarity?: string }
+    > = {};
+    for (const log of filteredLogs) {
+      const seen = new Set<string>();
+      for (const r of log.rewards || []) {
+        if (isJunkReward(r.name)) continue;
+        const amt = Number(r.amount) || 0;
+        if (amt <= 0) continue;
+        const key = r.name.toLowerCase();
+        if (!map[key]) {
+          map[key] = {
+            name: r.name,
+            amount: 0,
+            runsWithDrop: 0,
+            category: r.category,
+            rarity: r.rarity,
+          };
+        }
+        map[key].amount += amt;
+        if (!seen.has(key)) {
+          seen.add(key);
+          map[key].runsWithDrop += 1;
+        }
+      }
+    }
+    return { runCount, items: Object.values(map).sort((a, b) => b.amount - a.amount) };
+  }, [filteredLogs]);
 
   const originUrl =
     typeof window !== 'undefined' ? window.location.origin : 'https://aad-hazel.vercel.app';
@@ -1433,7 +1537,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
 
                   {/* Live KPI Strip */}
                   <div className="shrink-0 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
+                    <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3.5">
                       <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
                         <span>บอทออนไลน์</span>
                         <Bot className="w-4 h-4 text-emerald-400" />
@@ -1444,34 +1548,191 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
+                    <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3.5">
                       <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
                         <span>Gems / ชม.</span>
                         <img src="/icons/gems.png" alt="Gems" className="w-4 h-4 object-contain" />
                       </div>
-                      <div className="text-xl font-bold text-white">
-                        {analytics.gemsPerHr.toLocaleString()}
+                      <div className="text-xl font-bold text-white flex items-baseline gap-1.5">
+                        <span>{analytics.gemsPerHr.toLocaleString()}</span>
+                        {analytics.gemsPerRun > 0 && (
+                          <span className="text-[11px] font-medium text-emerald-300">
+                            +{analytics.gemsPerRun}/ตา
+                          </span>
+                        )}
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
+                    <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3.5">
                       <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
                         <span>Pearls / ชม.</span>
                         <img src="/icons/pearls.png" alt="Pearls" className="w-4 h-4 object-contain" />
                       </div>
-                      <div className="text-xl font-bold text-pink-200">
-                        {analytics.pearlsPerHr.toLocaleString()}
+                      <div className="text-xl font-bold text-pink-200 flex items-baseline gap-1.5">
+                        <span>{analytics.pearlsPerHr.toLocaleString()}</span>
+                        {analytics.pearlsPerRun > 0 && (
+                          <span className="text-[11px] font-medium text-pink-300/90">
+                            +{analytics.pearlsPerRun}/ตา
+                          </span>
+                        )}
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
+                    <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3.5">
                       <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
                         <span>เฉลี่ยต่อรอบ</span>
                         <Clock className="w-4 h-4 text-red-400" />
                       </div>
-                      <div className="text-xl font-bold text-white">
-                        {formatDuration(analytics.avgSec)}
+                      <div className="text-xl font-bold text-white flex items-baseline gap-1.5">
+                        <span>{formatDuration(analytics.avgSec)}</span>
+                        {analytics.totalRuns > 0 && (
+                          <span className="text-[11px] font-normal text-zinc-400">
+                            ({analytics.totalRuns} ตา)
+                          </span>
+                        )}
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Per-Run Loot Showcase Strip (for Farm Shop / Customers) */}
+                  <div className="shrink-0 rounded-2xl border border-red-500/25 bg-[#13080b]/85 px-3.5 py-2.5 space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                        <span className="text-xs font-bold text-white shrink-0">
+                          ของที่ได้ต่อตา
+                        </span>
+                        {lootViewMode === 'latest' && activeBotRunStats.latestRun && (
+                          <span className="text-[11px] text-zinc-400 truncate">
+                            {activeBotRunStats.latestRun.result === 'Win' ? 'ชนะ' : 'แพ้'} •{' '}
+                            {activeBotRunStats.latestRun.map_name} •{' '}
+                            {formatDuration(activeBotRunStats.latestRun.duration_sec)} •{' '}
+                            {timeAgo(activeBotRunStats.latestRun.created_at)}
+                          </span>
+                        )}
+                        {lootViewMode !== 'latest' && (
+                          <span className="text-[11px] text-zinc-400">
+                            คิดจาก {activeBotRunStats.runCount} รอบของ {activeAccount.bot_name}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {(
+                          [
+                            { id: 'latest', label: 'ตาล่าสุด' },
+                            { id: 'avg', label: 'เฉลี่ย / ตา' },
+                            { id: 'total', label: `รวม ${activeBotRunStats.runCount} ตา` },
+                          ] as const
+                        ).map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setLootViewMode(m.id)}
+                            className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer ${
+                              lootViewMode === m.id
+                                ? theme === 'mono'
+                                  ? 'bg-white text-zinc-950 border-white'
+                                  : 'bg-red-500/25 border-red-400/60 text-white'
+                                : 'bg-black/35 border-white/10 text-zinc-400 hover:text-zinc-200'
+                            }`}
+                          >
+                            {m.label}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setTab('history')}
+                          className="text-[11px] text-red-300 hover:text-white ml-1 cursor-pointer"
+                        >
+                          ดูทุกรอบ →
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {lootViewMode === 'latest' ? (
+                        (() => {
+                          const latest = activeBotRunStats.latestRun;
+                          const clean = (latest?.rewards || []).filter((r) => !isJunkReward(r.name));
+                          if (!latest) {
+                            return (
+                              <span className="text-[11px] text-zinc-500">
+                                ยังไม่มีรอบที่จบในหน้าต่างเวลานี้
+                              </span>
+                            );
+                          }
+                          if (clean.length === 0) {
+                            return (
+                              <span className="text-[11px] text-zinc-400">
+                                ตาล่าสุดยังไม่มีบันทึกของดรอปเพิ่ม (อัปเดตสคริปต์แล้วระบบจะเทียบของก่อน-หลังเข้าด่านทุกตาให้ครับ)
+                              </span>
+                            );
+                          }
+                          return clean.map((r, i) => {
+                            const icon = getRewardIcon(r);
+                            const st = getRarityStyle(r.rarity, r.name);
+                            return (
+                              <span
+                                key={`${r.name}-${i}`}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-xs font-semibold ${st.badge}`}
+                              >
+                                {icon ? (
+                                  <img
+                                    src={icon}
+                                    alt={r.name}
+                                    className="w-4 h-4 rounded object-contain shrink-0"
+                                  />
+                                ) : (
+                                  <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                                )}
+                                <span>{r.name}</span>
+                                <strong className="text-white">+{r.amount.toLocaleString()}</strong>
+                              </span>
+                            );
+                          });
+                        })()
+                      ) : activeBotRunStats.sortedLoot.length > 0 ? (
+                        activeBotRunStats.sortedLoot.slice(0, 12).map((item) => {
+                          const icon = getRewardIcon(item);
+                          const st = getRarityStyle(item.rarity, item.name);
+                          const avg =
+                            activeBotRunStats.runCount > 0
+                              ? item.amount / activeBotRunStats.runCount
+                              : item.amount;
+                          const dropPct =
+                            activeBotRunStats.runCount > 0
+                              ? Math.round((item.runsWithDrop / activeBotRunStats.runCount) * 100)
+                              : 100;
+                          const valStr =
+                            lootViewMode === 'avg'
+                              ? `${avg >= 10 ? Math.round(avg).toLocaleString() : avg.toFixed(1)}/ตา`
+                              : `+${item.amount.toLocaleString()}`;
+                          return (
+                            <span
+                              key={item.name}
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-xs font-semibold ${st.badge}`}
+                            >
+                              {icon && (
+                                <img
+                                  src={icon}
+                                  alt={item.name}
+                                  className="w-4 h-4 rounded object-contain shrink-0"
+                                />
+                              )}
+                              <span>{item.name}</span>
+                              <strong className="text-white">{valStr}</strong>
+                              {lootViewMode === 'avg' && dropPct < 100 && (
+                                <span className="text-[10px] opacity-75">({dropPct}%)</span>
+                              )}
+                            </span>
+                          );
+                        })
+                      ) : (
+                        <span className="text-[11px] text-zinc-400">
+                          ยังไม่มีของดรอปที่บันทึกไว้ (สคริปต์เวอร์ชันล่าสุดจะเทียบคลังก่อน-หลังจบด่านให้อัตโนมัติทุกตา)
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -1924,15 +2185,16 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                           </div>
                           <div className="flex flex-wrap items-center gap-1.5">
                             {(log.rewards || []).filter((r) => !isJunkReward(r.name)).map((r, i) => {
-                              const icon = getItemIcon(r.name);
+                              const icon = getRewardIcon(r);
                               const st = getRarityStyle(r.rarity, r.name);
                               return (
                                 <span
                                   key={i}
                                   className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] ${st.badge}`}
                                 >
-                                  {icon && <img src={icon} alt={r.name} className="w-3.5 h-3.5" />}
-                                  +{r.amount.toLocaleString()}
+                                  {icon && <img src={icon} alt={r.name} className="w-3.5 h-3.5 rounded object-contain" />}
+                                  <span>{r.name}</span>
+                                  <strong>+{r.amount.toLocaleString()}</strong>
                                 </span>
                               );
                             })}
@@ -2022,32 +2284,50 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
               </div>
             </div>
 
-            {/* Total Loot Summary */}
-            {Object.keys(analytics.lootTotals).length > 0 && (
-              <section className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
-                <h2 className="text-xs font-semibold uppercase tracking-wider text-red-300 mb-3">
-                  ยอดรวมที่ได้ในช่วงเวลานี้
-                </h2>
+            {/* Total & Per-Run Loot Summary */}
+            {filteredLootSummary.items.length > 0 && (
+              <section className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-xs font-semibold uppercase tracking-wider text-red-300">
+                    สรุปของที่ได้ ({filteredLootSummary.runCount} ตา) — ยอดรวม &amp; เฉลี่ยต่อตา
+                  </h2>
+                  <span className="text-[11px] text-zinc-400">
+                    แสดงยอดรวมทั้งหมด + เฉลี่ยที่ดรอปต่อ 1 รอบ
+                  </span>
+                </div>
                 <div className="flex flex-wrap gap-2">
-                  {Object.entries(analytics.lootTotals)
-                    .sort((a, b) => b[1] - a[1])
-                    .map(([name, amount]) => {
-                      const icon = getItemIcon(name);
-                      const st = getRarityStyle(undefined, name);
-                      return (
-                        <span
-                          key={name}
-                          className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border font-medium ${st.badge}`}
-                        >
-                          {icon && (
-                            <img src={icon} alt={name} className="w-4 h-4 object-contain shrink-0" />
-                          )}
-                          <span>
-                            {name}: <strong className="ml-1">+{amount.toLocaleString()}</strong>
+                  {filteredLootSummary.items.map((item) => {
+                    const icon = getRewardIcon(item);
+                    const st = getRarityStyle(item.rarity, item.name);
+                    const avg =
+                      filteredLootSummary.runCount > 0
+                        ? item.amount / filteredLootSummary.runCount
+                        : item.amount;
+                    const avgStr = avg >= 10 ? Math.round(avg).toLocaleString() : avg.toFixed(1);
+                    return (
+                      <span
+                        key={item.name}
+                        className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border font-medium ${st.badge}`}
+                      >
+                        {icon && (
+                          <img
+                            src={icon}
+                            alt={item.name}
+                            className="w-4 h-4 rounded object-contain shrink-0"
+                          />
+                        )}
+                        <span>
+                          {item.name}:{' '}
+                          <strong className="ml-0.5 text-white">
+                            +{item.amount.toLocaleString()}
+                          </strong>
+                          <span className="ml-1.5 text-[11px] opacity-80">
+                            (เฉลี่ย {avgStr}/ตา)
                           </span>
                         </span>
-                      );
-                    })}
+                      </span>
+                    );
+                  })}
                 </div>
               </section>
             )}
@@ -2181,7 +2461,7 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                             {cleanRewards.length > 0 && (
                               <div className="flex flex-wrap gap-1.5 pt-1">
                                 {cleanRewards.map((r, idx) => {
-                                  const icon = getItemIcon(r.name);
+                                  const icon = getRewardIcon(r);
                                   return (
                                     <span
                                       key={idx}
@@ -2191,14 +2471,14 @@ export default function DashboardClient({ user }: { user: UserInfo }) {
                                         <img
                                           src={icon}
                                           alt={r.name}
-                                          className="w-4 h-4 object-contain shrink-0"
+                                          className="w-4 h-4 rounded object-contain shrink-0"
                                         />
                                       ) : (
                                         <Sparkles className="w-3.5 h-3.5 text-amber-300 shrink-0" />
                                       )}
                                       <span>{r.name}</span>
                                       <span className="text-zinc-300 font-bold">
-                                        ×{r.amount.toLocaleString()}
+                                        +{r.amount.toLocaleString()}
                                       </span>
                                     </span>
                                   );
