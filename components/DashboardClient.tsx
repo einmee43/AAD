@@ -3477,7 +3477,7 @@ export default function DashboardClient({
                           <div className="text-xs font-mono text-red-300 truncate">{k.api_key}</div>
                           <div className="text-[11px] text-zinc-500 mt-0.5">
                             ใช้งานล่าสุด: {k.last_used_at ? timeAgo(k.last_used_at) : 'ยังไม่เคยใช้'}
-                            {k.discord_webhook_url ? ' • Discord Alert ON (Rare / Portal / หอคอย)' : ' • ยังไม่ใส่ Webhook'}
+                            {k.discord_webhook_url ? ' • Discord Alert ON' : ' • ยังไม่ใส่ Webhook'}
                           </div>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">

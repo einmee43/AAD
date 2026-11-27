@@ -28,94 +28,6 @@ interface TowerInfo {
   dungeon_depth?: number;
 }
 
-function formatEventTowerKey(key: string): string {
-  return key
-    .replace(/^event_tower_/, '')
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-async function sendDiscordTowerAlert(
-  webhookUrl: string,
-  botName: string,
-  headline: string,
-  tower: TowerInfo,
-  extraFields: Array<{ name: string; value: string; inline?: boolean }> = []
-) {
-  try {
-    const fields: Array<{ name: string; value: string; inline?: boolean }> = [];
-
-    if (typeof tower.infinite_room === 'number' && tower.infinite_room > 0) {
-      fields.push({
-        name: '🏰 Infinity Mansion (สูงสุด)',
-        value: `**Room ${tower.infinite_room}**`,
-        inline: true,
-      });
-    }
-
-    if (typeof tower.active_room === 'number' && tower.active_room > 0) {
-      fields.push({
-        name: '⚔️ กำลังไต่ชั้น',
-        value: `**Room ${tower.active_room}**`,
-        inline: true,
-      });
-    }
-
-    if (tower.season || tower.rank_title || tower.rank_pct) {
-      const rankParts = [tower.season, tower.rank_title, tower.rank_pct].filter(Boolean);
-      fields.push({
-        name: '🏆 ซีซั่น / แรงก์',
-        value: rankParts.join(' • '),
-        inline: true,
-      });
-    }
-
-    if (tower.event_floors && Object.keys(tower.event_floors).length > 0) {
-      const evLines = Object.entries(tower.event_floors)
-        .filter(([, fl]) => typeof fl === 'number' && fl > 0)
-        .map(([k, fl]) => `${formatEventTowerKey(k)}: **Floor ${fl}**`);
-      if (evLines.length > 0) {
-        fields.push({
-          name: '🗼 Event Tower',
-          value: evLines.join('\n'),
-          inline: true,
-        });
-      }
-    }
-
-    if (typeof tower.active_event_floor === 'number' && tower.active_event_floor > 0) {
-      fields.push({
-        name: '⚔️ กำลังลง Event Tower',
-        value: `**Floor ${tower.active_event_floor}**`,
-        inline: true,
-      });
-    }
-
-    for (const f of extraFields) {
-      fields.push(f);
-    }
-
-    await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: 'Nexty Hub Tracker',
-        embeds: [
-          {
-            title: `🏰 Tower Alert • ${botName}`,
-            description: headline,
-            color: 0xa855f7,
-            fields,
-            timestamp: new Date().toISOString(),
-          },
-        ],
-      }),
-    });
-  } catch {
-    // Non-blocking alert
-  }
-}
-
 async function sendDiscordAlert(
   webhookUrl: string,
   botName: string,
@@ -237,9 +149,6 @@ export async function POST(request: Request) {
     }
 
     // Update inventory snapshot if provided (preserve existing currencies like Dawn Coins, _team & _units)
-    let mergedTowerForAlert: TowerInfo | null = null;
-    let towerAlertSent = false;
-
     if (
       body.currencies ||
       body.items ||
@@ -280,13 +189,12 @@ export async function POST(request: Request) {
           ...(prevTower?.event_floors || {}),
           ...(incomingTower?.event_floors || {}),
         };
-        const isLobbyNow = body.status === 'lobby';
         const resolvedTower: TowerInfo = {
           ...(prevTower || {}),
           ...(incomingTower || {}),
           event_floors: Object.keys(mergedEventFloors).length > 0 ? mergedEventFloors : undefined,
         };
-        if (isLobbyNow) {
+        if (body.status === 'lobby') {
           delete resolvedTower.active_room;
           delete resolvedTower.active_event_floor;
         } else if (incomingTower) {
@@ -294,49 +202,6 @@ export async function POST(request: Request) {
           resolvedTower.active_event_floor = incomingTower.active_event_floor;
         }
         mergedCurrencies._tower = resolvedTower;
-        mergedTowerForAlert = resolvedTower;
-
-        if (keyRow.discord_webhook_url && incomingTower) {
-          const changeLines: string[] = [];
-          const prevInf = Number(prevTower?.infinite_room || 0);
-          const nextInf = Number(resolvedTower.infinite_room || 0);
-          if (prevInf > 0 && nextInf > prevInf) {
-            changeLines.push(`🎉 ปลดล็อกชั้นใหม่ Infinity Mansion: **Room ${prevInf} ➔ Room ${nextInf}**`);
-          }
-
-          const prevActRoom = Number(prevTower?.active_room || 0);
-          const nextActRoom = Number(resolvedTower.active_room || 0);
-          if (nextActRoom > 0 && nextActRoom !== prevActRoom) {
-            changeLines.push(`⚔️ บอทกำลังเข้าสู้ Infinity Mansion: **Room ${nextActRoom}**`);
-          }
-
-          const prevEvMap = prevTower?.event_floors || {};
-          const nextEvMap = resolvedTower.event_floors || {};
-          for (const [k, fl] of Object.entries(nextEvMap)) {
-            const pFl = Number(prevEvMap[k] || 0);
-            if (pFl > 0 && fl > pFl) {
-              changeLines.push(
-                `🗼 ปลดล็อกชั้นใหม่ ${formatEventTowerKey(k)}: **Floor ${pFl} ➔ Floor ${fl}**`
-              );
-            }
-          }
-
-          const prevActEv = Number(prevTower?.active_event_floor || 0);
-          const nextActEv = Number(resolvedTower.active_event_floor || 0);
-          if (nextActEv > 0 && nextActEv !== prevActEv) {
-            changeLines.push(`⚔️ บอทกำลังเข้าสู้ Event Tower: **Floor ${nextActEv}**`);
-          }
-
-          if (changeLines.length > 0) {
-            towerAlertSent = true;
-            await sendDiscordTowerAlert(
-              keyRow.discord_webhook_url,
-              botName,
-              changeLines.join('\n'),
-              resolvedTower
-            );
-          }
-        }
       }
 
       if (Array.isArray(body.team) && body.team.length > 0) {
@@ -430,11 +295,6 @@ export async function POST(request: Request) {
         const rareItems = rewards.filter(isRareReward);
         const isPortalRun =
           mode.toLowerCase().includes('portal') || mapName.toLowerCase().includes('portal');
-        const isTowerRun =
-          mode.toLowerCase().includes('tower') ||
-          mapName.toLowerCase().includes('infinity mansion') ||
-          mapName.toLowerCase().includes('infinite tower') ||
-          /\broom\s*\d+/i.test(mapName);
         if ((keyRow.alert_on_rare && rareItems.length > 0) || isPortalRun) {
           await sendDiscordAlert(
             keyRow.discord_webhook_url,
@@ -445,22 +305,6 @@ export async function POST(request: Request) {
             durationSec,
             rewards,
             rareItems
-          );
-        } else if (isTowerRun && !towerAlertSent) {
-          const mins = Math.floor(durationSec / 60);
-          const secs = durationSec % 60;
-          await sendDiscordTowerAlert(
-            keyRow.discord_webhook_url,
-            botName,
-            `${result === 'Win' ? '✅ จบด่านหอคอย' : '💀 แพ้ด่านหอคอย'}: **${mapName}**`,
-            mergedTowerForAlert || {},
-            [
-              {
-                name: 'ผลลัพธ์ / เวลา',
-                value: `${result} (${mins}m ${secs}s)`,
-                inline: true,
-              },
-            ]
           );
         }
       }
