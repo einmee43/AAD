@@ -196,6 +196,47 @@ local function readTowerGuiInfo()
                 if p ~= "" and p ~= "???" then info.rank_pct = p end
             end
         end
+
+        local evUi = pg:FindFirstChild("EventTowerUI")
+        if evUi then
+            local evLs = evUi:FindFirstChild("LevelSelect")
+            local evTop = evLs and evLs:FindFirstChild("Top")
+            local evTitle = evTop and evTop:FindFirstChild("Title")
+            if evTitle and evTitle:IsA("TextLabel") then
+                local en = tostring(evTitle.Text or ""):gsub("<[^>]+>", ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
+                if en ~= "" and en ~= "???" then info.event_name = en end
+            end
+
+            local evInfo = evLs and evLs:FindFirstChild("InfoFrame")
+            local evStats = evInfo and evInfo:FindFirstChild("Stats")
+            local evWorld = evStats and evStats:FindFirstChild("World")
+            if evWorld and evWorld:IsA("TextLabel") then
+                local ew = tostring(evWorld.Text or ""):gsub("<[^>]+>", ""):match("^%s*(.-)%s*$")
+                if ew ~= "" and ew ~= "???" then info.event_world = ew end
+            end
+
+            local evLb = evUi:FindFirstChild("InfiniteLeaderboard")
+            local evRk = evLb and evLb:FindFirstChild("Ranking")
+            local evWrap = evRk and evRk:FindFirstChild("Wrapper")
+            local evFrame = evWrap and evWrap:FindFirstChild("Frame")
+            if evFrame then
+                local efr = evFrame:FindFirstChild("FurthestRoom") and evFrame.FurthestRoom:FindFirstChild("V")
+                if efr and efr:IsA("TextLabel") then
+                    local ecNum = tonumber(tostring(efr.Text):match("%d+"))
+                    if ecNum and ecNum >= 0 then info.event_cleared = ecNum end
+                end
+                local erp = evFrame:FindFirstChild("Ranking") and evFrame.Ranking:FindFirstChild("V")
+                if erp and erp:IsA("TextLabel") then
+                    local p = tostring(erp.Text or ""):gsub("<[^>]+>", ""):match("^%s*(.-)%s*$")
+                    if p ~= "" and p ~= "???" then info.event_rank_pct = p end
+                end
+                local ert = evFrame:FindFirstChild("RankTitle") and evFrame.RankTitle:FindFirstChild("V")
+                if ert and ert:IsA("TextLabel") then
+                    local r = tostring(ert.Text or ""):gsub("<[^>]+>", ""):match("^%s*(.-)%s*$")
+                    if r ~= "" and r ~= "???" then info.event_rank = r end
+                end
+            end
+        end
     end)
     return info
 end
@@ -794,13 +835,26 @@ local function scanGcFullInventoryIfDue(force)
         end
 
         local finalRoom = infRoom or guiTower.gui_room
-        if finalRoom or eventFloors or dungeonDepth then
+        local evCleared = guiTower.event_cleared
+        if not evCleared and type(eventFloors) == "table" then
+            for _, fv in pairs(eventFloors) do
+                if type(fv) == "number" and (not evCleared or fv > evCleared) then
+                    evCleared = fv
+                end
+            end
+        end
+        if finalRoom or eventFloors or evCleared or guiTower.event_name or dungeonDepth then
             towerSummary = {
                 infinite_room = finalRoom,
                 season = guiTower.season,
                 rank_title = guiTower.rank_title,
                 rank_pct = guiTower.rank_pct,
                 event_floors = eventFloors,
+                event_name = guiTower.event_name,
+                event_world = guiTower.event_world,
+                event_cleared = evCleared,
+                event_rank_pct = guiTower.event_rank_pct,
+                event_rank = guiTower.event_rank,
                 dungeon_depth = dungeonDepth,
             }
         end
@@ -1084,9 +1138,9 @@ local function detectState()
                 elseif lowLvl:find("infinity mansion") or lowLvl:find("infinite tower") or lowLvl:find("infinity castle") or (roomNum and not lowLvl:find("dungeon")) then
                     mode = "Infinity Tower"
                     if roomNum and roomNum > 0 then cachedActiveTowerRoom = roomNum end
-                elseif floorNum and floorNum > 0 then
+                elseif lowLvl:find("misty") or lowLvl:find("event tower") or (floorNum and floorNum > 0) then
                     mode = "Event Tower"
-                    cachedActiveEventFloor = floorNum
+                    if floorNum and floorNum > 0 then cachedActiveEventFloor = floorNum end
                 elseif lowLvl:find("portal") then
                     mode = "Portal"
                 end
@@ -1227,6 +1281,11 @@ local function attachProfileMetadata(cur, gcObj)
             if guiTower.season then towerOut.season = guiTower.season end
             if guiTower.rank_title then towerOut.rank_title = guiTower.rank_title end
             if guiTower.rank_pct then towerOut.rank_pct = guiTower.rank_pct end
+            if guiTower.event_name then towerOut.event_name = guiTower.event_name end
+            if guiTower.event_world then towerOut.event_world = guiTower.event_world end
+            if guiTower.event_cleared ~= nil then towerOut.event_cleared = guiTower.event_cleared end
+            if guiTower.event_rank_pct then towerOut.event_rank_pct = guiTower.event_rank_pct end
+            if guiTower.event_rank then towerOut.event_rank = guiTower.event_rank end
         end
         if cachedActiveTowerRoom then towerOut.active_room = cachedActiveTowerRoom end
         if cachedActiveEventFloor then towerOut.active_event_floor = cachedActiveEventFloor end

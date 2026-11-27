@@ -25,6 +25,11 @@ interface TowerInfo {
   rank_title?: string;
   rank_pct?: string;
   event_floors?: Record<string, number>;
+  event_name?: string;
+  event_world?: string;
+  event_cleared?: number;
+  event_rank_pct?: string;
+  event_rank?: string;
   dungeon_depth?: number;
 }
 

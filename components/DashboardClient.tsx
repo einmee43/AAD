@@ -98,6 +98,11 @@ interface TowerInfo {
   rank_title?: string;
   rank_pct?: string;
   event_floors?: Record<string, number>;
+  event_name?: string;
+  event_world?: string;
+  event_cleared?: number;
+  event_rank_pct?: string;
+  event_rank?: string;
   dungeon_depth?: number;
 }
 
@@ -620,7 +625,9 @@ export default function DashboardClient({
   const [showAlerts, setShowAlerts] = useState(false);
   const seenLogIdsRef = useRef<Set<string>>(new Set());
   const logsInitializedRef = useRef(false);
-  const seenTowerStateRef = useRef<Map<string, { inf: number; act: number; ev: Record<string, number>; actEv: number }>>(new Map());
+  const seenTowerStateRef = useRef<
+    Map<string, { inf: number; act: number; ev: Record<string, number>; evCleared: number; actEv: number }>
+  >(new Map());
   const towerInitializedRef = useRef(false);
 
   const loadDashboard = useCallback(async () => {
@@ -789,6 +796,7 @@ export default function DashboardClient({
             inf: Number(tw.infinite_room || 0),
             act: Number(tw.active_room || 0),
             ev: { ...(tw.event_floors || {}) },
+            evCleared: Number(tw.event_cleared || 0),
             actEv: Number(tw.active_event_floor || 0),
           });
         }
@@ -804,6 +812,7 @@ export default function DashboardClient({
       const curInf = Number(tw.infinite_room || 0);
       const curAct = Number(tw.active_room || 0);
       const curEv = tw.event_floors || {};
+      const curEvCleared = Number(tw.event_cleared || 0);
       const curActEv = Number(tw.active_event_floor || 0);
       const prev = seenTowerStateRef.current.get(acc.id);
 
@@ -815,22 +824,36 @@ export default function DashboardClient({
         if (curAct > 0 && curAct !== prev.act) {
           msgParts.push(`กำลังไต่ Room ${curAct}`);
         }
+        let reportedEvCleared = false;
         for (const [k, fl] of Object.entries(curEv)) {
           const prevFl = Number(prev.ev[k] || 0);
           if (prevFl > 0 && fl > prevFl) {
-            msgParts.push(`${formatEventTowerLabel(k)}: Floor ${prevFl} ➔ Floor ${fl}`);
+            msgParts.push(`${tw.event_name || formatEventTowerLabel(k)}: Floor ${prevFl} ➔ Floor ${fl}`);
+            reportedEvCleared = true;
           }
         }
+        if (!reportedEvCleared && prev.evCleared > 0 && curEvCleared > prev.evCleared) {
+          msgParts.push(
+            `${tw.event_name || 'Event Tower'}: Floor ${prev.evCleared} ➔ Floor ${curEvCleared}`
+          );
+        }
         if (curActEv > 0 && curActEv !== prev.actEv) {
-          msgParts.push(`กำลังลง Event Floor ${curActEv}`);
+          msgParts.push(`กำลังลง ${tw.event_name || 'Event Tower'} Floor ${curActEv}`);
         }
 
         if (msgParts.length > 0) {
-          const rankDesc = [tw.season, tw.rank_title, tw.rank_pct].filter(Boolean).join(' • ');
+          const rankDesc = [
+            tw.season,
+            tw.rank_title,
+            tw.rank_pct,
+            tw.event_rank ? `${tw.event_name || 'Event'} ${tw.event_rank}` : null,
+          ]
+            .filter(Boolean)
+            .join(' • ');
           towerAlerts.push({
-            id: `tower-${acc.id}-${Date.now()}-${curInf}-${curAct}-${curActEv}`,
+            id: `tower-${acc.id}-${Date.now()}-${curInf}-${curAct}-${curEvCleared}-${curActEv}`,
             title: `🏰 ${acc.bot_name} • หอคอยอัปเดต`,
-            subtitle: rankDesc || 'Infinity Mansion Tracker',
+            subtitle: rankDesc || 'Tower Tracker',
             rewards: msgParts.join(' • '),
             isRare: true,
             result: 'Win',
@@ -843,6 +866,7 @@ export default function DashboardClient({
         inf: curInf,
         act: curAct,
         ev: { ...curEv },
+        evCleared: curEvCleared,
         actEv: curActEv,
       });
     }
@@ -1871,10 +1895,6 @@ export default function DashboardClient({
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/25 border border-purple-400/45 text-[10px] font-bold text-purple-200 animate-pulse shrink-0">
                             ⚔️ กำลังไต่ Room {activeTower.active_room}
                           </span>
-                        ) : activeTower?.active_event_floor ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/25 border border-amber-400/45 text-[10px] font-bold text-amber-200 animate-pulse shrink-0">
-                            ⚔️ Event Floor {activeTower.active_event_floor}
-                          </span>
                         ) : activeTower?.infinite_room ? (
                           <span className="text-xs font-extrabold text-purple-200 shrink-0">
                             Room {activeTower.infinite_room}
@@ -1902,22 +1922,82 @@ export default function DashboardClient({
                               </span>
                             )}
                           </div>
-                          {activeTower.event_floors &&
-                            Object.keys(activeTower.event_floors).length > 0 && (
-                              <div className="flex flex-wrap items-center gap-1">
-                                {Object.entries(activeTower.event_floors).map(([k, fl]) => (
-                                  <span
-                                    key={k}
-                                    className="px-1.5 py-0.5 rounded bg-purple-500/15 border border-purple-400/30 text-[10px] font-semibold text-purple-200"
-                                  >
-                                    {formatEventTowerLabel(k)} Fl.{fl}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
                         </div>
                       )}
                     </div>
+
+                    {/* Event Tower (Misty Tower) Card */}
+                    {(() => {
+                      const evMaxFromMap = activeTower?.event_floors
+                        ? Math.max(0, ...Object.values(activeTower.event_floors))
+                        : 0;
+                      const evCleared =
+                        typeof activeTower?.event_cleared === 'number'
+                          ? activeTower.event_cleared
+                          : evMaxFromMap;
+                      const hasEventTower =
+                        Boolean(activeTower?.event_name) ||
+                        evCleared > 0 ||
+                        Boolean(activeTower?.active_event_floor);
+                      return (
+                        <div
+                          className={`col-span-2 rounded-xl border p-3 ${
+                            hasEventTower
+                              ? 'border-teal-400/35 bg-gradient-to-br from-teal-950/35 via-[#071214]/90 to-[#12070a]/90'
+                              : 'border-red-500/20 bg-[#12070a]/70'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Flame
+                                className={`w-4 h-4 shrink-0 ${
+                                  hasEventTower ? 'text-teal-300' : 'text-zinc-500'
+                                }`}
+                              />
+                              <span className="text-[11px] font-semibold text-zinc-200 truncate">
+                                {activeTower?.event_name || 'Event Tower'}
+                              </span>
+                              {activeTower?.event_world && (
+                                <span className="px-1.5 py-0.5 rounded bg-teal-500/15 border border-teal-400/30 text-[9px] font-bold text-teal-200 shrink-0">
+                                  {activeTower.event_world}
+                                </span>
+                              )}
+                            </div>
+                            {activeTower?.active_event_floor ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-teal-500/25 border border-teal-400/45 text-[10px] font-bold text-teal-200 animate-pulse shrink-0">
+                                ⚔️ กำลังไต่ Floor {activeTower.active_event_floor}
+                              </span>
+                            ) : hasEventTower ? (
+                              <span className="text-xs font-extrabold text-teal-200 shrink-0">
+                                Floor {evCleared + 1}
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-zinc-500">รอซิงค์ Event Tower</span>
+                            )}
+                          </div>
+
+                          {hasEventTower && (
+                            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                              <div className="flex flex-wrap items-center gap-1.5 text-zinc-300">
+                                <span className="font-bold text-teal-200">
+                                  Cleared {evCleared} ชั้น
+                                </span>
+                                {activeTower?.event_rank_pct && (
+                                  <span className="text-zinc-400">
+                                    • <span className="text-rose-300 font-semibold">{activeTower.event_rank_pct}</span>
+                                  </span>
+                                )}
+                                {activeTower?.event_rank && (
+                                  <span className="text-sky-300 font-semibold">
+                                    ({activeTower.event_rank})
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     <div className="col-span-2 rounded-xl border border-red-500/25 bg-[#12070a]/90 p-3 flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
@@ -3051,32 +3131,51 @@ export default function DashboardClient({
                               {(() => {
                                 const tw = (cur['_tower'] as TowerInfo | undefined) || null;
                                 if (!tw) return <span className="text-zinc-500">-</span>;
-                                const evEntries = tw.event_floors
-                                  ? Object.entries(tw.event_floors).filter(([, fl]) => fl > 0)
-                                  : [];
+                                const evFromMap = tw.event_floors
+                                  ? Math.max(0, ...Object.values(tw.event_floors))
+                                  : 0;
+                                const evCleared =
+                                  typeof tw.event_cleared === 'number' ? tw.event_cleared : evFromMap;
+                                const hasEv =
+                                  Boolean(tw.event_name) ||
+                                  evCleared > 0 ||
+                                  Boolean(tw.active_event_floor);
                                 return (
-                                  <div className="space-y-0.5">
-                                    <div className="flex items-center gap-1.5">
-                                      {tw.active_room ? (
-                                        <span className="px-2 py-0.5 rounded-lg border border-purple-400/45 bg-purple-500/20 text-[11px] font-bold text-purple-200 animate-pulse">
-                                          ⚔️ Room {tw.active_room}
-                                        </span>
-                                      ) : tw.infinite_room ? (
-                                        <span className="px-2 py-0.5 rounded-lg border border-purple-400/30 bg-purple-500/10 text-[11px] font-bold text-purple-200">
-                                          Room {tw.infinite_room}
-                                        </span>
-                                      ) : null}
-                                      {tw.rank_pct && (
-                                        <span className="text-[10px] text-fuchsia-300/90 font-semibold">
-                                          {tw.rank_pct}
-                                        </span>
-                                      )}
-                                    </div>
-                                    {evEntries.length > 0 && (
-                                      <div className="text-[10px] text-zinc-400 truncate max-w-[140px]">
-                                        {evEntries
-                                          .map(([k, fl]) => `${formatEventTowerLabel(k)} Fl.${fl}`)
-                                          .join(', ')}
+                                  <div className="space-y-1">
+                                    {(tw.active_room || tw.infinite_room) && (
+                                      <div className="flex items-center gap-1.5">
+                                        {tw.active_room ? (
+                                          <span className="px-2 py-0.5 rounded-lg border border-purple-400/45 bg-purple-500/20 text-[11px] font-bold text-purple-200 animate-pulse">
+                                            ⚔️ Room {tw.active_room}
+                                          </span>
+                                        ) : (
+                                          <span className="px-2 py-0.5 rounded-lg border border-purple-400/30 bg-purple-500/10 text-[11px] font-bold text-purple-200">
+                                            Room {tw.infinite_room}
+                                          </span>
+                                        )}
+                                        {tw.rank_pct && (
+                                          <span className="text-[10px] text-fuchsia-300/90 font-semibold">
+                                            {tw.rank_pct}
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+                                    {hasEv && (
+                                      <div className="flex items-center gap-1.5">
+                                        {tw.active_event_floor ? (
+                                          <span className="px-2 py-0.5 rounded-lg border border-teal-400/45 bg-teal-500/20 text-[10px] font-bold text-teal-200 animate-pulse">
+                                            ⚔️ Fl.{tw.active_event_floor}
+                                          </span>
+                                        ) : (
+                                          <span className="px-2 py-0.5 rounded-lg border border-teal-400/30 bg-teal-500/10 text-[10px] font-bold text-teal-200">
+                                            {tw.event_name ? tw.event_name.replace(/\s*\([^)]*\)/, '') : 'Event'} Fl.{evCleared + 1}
+                                          </span>
+                                        )}
+                                        {tw.event_rank && (
+                                          <span className="text-[10px] text-sky-300 font-semibold">
+                                            {tw.event_rank}
+                                          </span>
+                                        )}
                                       </div>
                                     )}
                                   </div>
