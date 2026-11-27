@@ -9,6 +9,16 @@ import unitRarities from '@/lib/unitRarities.json';
 import unitPortraits from '@/lib/unitPortraits.json';
 import itemIcons from '@/lib/itemIcons.json';
 import mapIcons from '@/lib/mapIcons.json';
+import {
+  ALL_SHARE_CURRENCIES,
+  ALL_SHARE_SECTIONS,
+  SHARE_CURRENCY_META,
+  SHARE_PRESETS,
+  SHARE_SECTION_META,
+  type ShareCurrencyKey,
+  type ShareSectionKey,
+  type ShareVisibilityConfig,
+} from '@/lib/shareConfig';
 
 const unitRarityMap = unitRarities as Record<string, string>;
 const localUnitPortraitMap = unitPortraits as Record<string, string>;
@@ -57,6 +67,7 @@ interface DashboardClientProps {
   shareToken?: string;
   shareLabel?: string;
   initialHours?: number;
+  initialShareConfig?: ShareVisibilityConfig;
 }
 
 interface BattlePassTier {
@@ -565,8 +576,9 @@ export default function DashboardClient({
   shareToken,
   shareLabel,
   initialHours = 24,
+  initialShareConfig,
 }: DashboardClientProps) {
-  const [tab, setTab] = useState<'profile' | 'overview' | 'history' | 'keys'>('profile');
+  const [rawTab, setTab] = useState<'profile' | 'overview' | 'history' | 'keys'>('profile');
   const [theme, setTheme] = useState<'kage' | 'mono'>('kage');
   const [hours, setHours] = useState(initialHours);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -579,7 +591,7 @@ export default function DashboardClient({
   const [loading, setLoading] = useState(false);
 
   // Filters & Modals
-  const [inventoryTab, setInventoryTab] = useState<InventoryTab>('gained');
+  const [rawInventoryTab, setInventoryTab] = useState<InventoryTab>('gained');
   const [unitFilter, setUnitFilter] = useState<'ALL' | 'shiny' | 'trait' | 'equipped'>('ALL');
   const [rarityFilter, setRarityFilter] = useState<
     'ALL' | 'Secret' | 'Exclusive' | 'Mythic' | 'Legendary' | 'Epic' | 'Rare'
@@ -593,6 +605,12 @@ export default function DashboardClient({
   const [shareSelectedBots, setShareSelectedBots] = useState<string[]>([]);
   const [shareOrderLabel, setShareOrderLabel] = useState('Nexty Shop • Live Farm');
   const [shareHours, setShareHours] = useState(24);
+  const [shareSections, setShareSections] = useState<ShareSectionKey[]>(ALL_SHARE_SECTIONS);
+  const [shareCurrencies, setShareCurrencies] = useState<ShareCurrencyKey[]>(ALL_SHARE_CURRENCIES);
+  const [shareFocusText, setShareFocusText] = useState('');
+  const [shareConfig, setShareConfig] = useState<ShareVisibilityConfig | null>(
+    initialShareConfig || null
+  );
   const [generatedShareUrl, setGeneratedShareUrl] = useState<string | null>(null);
   const [shareBusy, setShareBusy] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
@@ -632,6 +650,64 @@ export default function DashboardClient({
   >(new Map());
   const towerInitializedRef = useRef(false);
 
+  const vis = useMemo(() => {
+    if (!readOnly || !shareConfig) {
+      return {
+        status: true,
+        currencies: true,
+        gained: true,
+        inventory: true,
+        units: true,
+        battlepass: true,
+        tower: true,
+        history: true,
+        overview: true,
+        curSet: new Set<ShareCurrencyKey>(ALL_SHARE_CURRENCIES),
+        focusKeywords: [] as string[],
+      };
+    }
+    const sec = new Set(shareConfig.sections);
+    return {
+      status: sec.has('status'),
+      currencies: sec.has('currencies'),
+      gained: sec.has('gained'),
+      inventory: sec.has('inventory'),
+      units: sec.has('units'),
+      battlepass: sec.has('battlepass'),
+      tower: sec.has('tower'),
+      history: sec.has('history'),
+      overview: sec.has('overview'),
+      curSet: new Set<ShareCurrencyKey>(shareConfig.currencies),
+      focusKeywords: shareConfig.focusKeywords,
+    };
+  }, [readOnly, shareConfig]);
+
+  const tab = useMemo(() => {
+    if (rawTab === 'overview' && !vis.overview) return 'profile';
+    if (rawTab === 'history' && !vis.history) return 'profile';
+    if (rawTab === 'keys' && readOnly) return 'profile';
+    return rawTab;
+  }, [rawTab, vis.overview, vis.history, readOnly]);
+
+  const allowedInventoryTabs = useMemo<InventoryTab[]>(() => {
+    const out: InventoryTab[] = [];
+    if (vis.gained) out.push('gained');
+    if (vis.inventory) out.push('all');
+    if (vis.units) out.push('units', 'team');
+    if (vis.inventory) {
+      out.push('portals', 'material', 'star', 'relic', 'key', 'skin', 'xp_food', 'other');
+    }
+    return out;
+  }, [vis.gained, vis.inventory, vis.units]);
+
+  const inventoryTab = useMemo<InventoryTab>(
+    () =>
+      allowedInventoryTabs.includes(rawInventoryTab)
+        ? rawInventoryTab
+        : allowedInventoryTabs[0] || 'gained',
+    [allowedInventoryTabs, rawInventoryTab]
+  );
+
   const loadDashboard = useCallback(async () => {
     const endpoint = shareToken
       ? `/api/share?token=${encodeURIComponent(shareToken)}&hours=${hours}`
@@ -642,6 +718,7 @@ export default function DashboardClient({
       setAccounts(data.accounts || []);
       setLogs(data.run_logs || []);
       setSnapshots(data.snapshots || []);
+      if (data.share_config) setShareConfig(data.share_config);
     }
   }, [hours, shareToken]);
 
@@ -679,6 +756,7 @@ export default function DashboardClient({
         setAccounts(data.accounts || []);
         setLogs(data.run_logs || []);
         setSnapshots(data.snapshots || []);
+        if (data.share_config) setShareConfig(data.share_config);
       }
       if (keysRes && keysRes.ok) {
         const kData = await keysRes.json();
@@ -964,6 +1042,10 @@ export default function DashboardClient({
     setShareBusy(true);
     setShareError(null);
     try {
+      const focusKeywords = shareFocusText
+        .split(/[,|\n]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
       const res = await fetch('/api/share', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -971,6 +1053,9 @@ export default function DashboardClient({
           botNames: shareSelectedBots,
           label: shareOrderLabel,
           hours: shareHours,
+          sections: shareSections,
+          currencies: shareSections.includes('currencies') ? shareCurrencies : [],
+          focusKeywords,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -1418,19 +1503,23 @@ export default function DashboardClient({
               >
                 โปรไฟล์ &amp; คลัง
               </button>
-              <button
-                onClick={() => setTab('overview')}
-                aria-current={tab === 'overview' ? 'page' : undefined}
-              >
-                <Layers className="w-3.5 h-3.5" />
-                <span>ภาพรวม ({accounts.length})</span>
-              </button>
-              <button
-                onClick={() => setTab('history')}
-                aria-current={tab === 'history' ? 'page' : undefined}
-              >
-                ประวัติดรอป
-              </button>
+              {vis.overview && (
+                <button
+                  onClick={() => setTab('overview')}
+                  aria-current={tab === 'overview' ? 'page' : undefined}
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>ภาพรวม ({accounts.length})</span>
+                </button>
+              )}
+              {vis.history && (
+                <button
+                  onClick={() => setTab('history')}
+                  aria-current={tab === 'history' ? 'page' : undefined}
+                >
+                  ประวัติดรอป
+                </button>
+              )}
               {!readOnly && (
                 <button
                   onClick={() => setTab('keys')}
@@ -1462,6 +1551,11 @@ export default function DashboardClient({
               <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/15 border border-emerald-400/35 text-emerald-200">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 {shareLabel || 'Live View'}
+                {vis.focusKeywords.length > 0 && (
+                  <span className="text-[10px] text-amber-200/90 border-l border-emerald-400/30 pl-1.5">
+                    เฉพาะ: {vis.focusKeywords.join(', ')}
+                  </span>
+                )}
               </span>
             )}
 
@@ -1593,7 +1687,11 @@ export default function DashboardClient({
               >
                 {/* LEFT COLUMN: Locked Profile Card */}
                 <section
-                  className={`lg:col-span-4 rounded-2xl border p-5 relative overflow-y-auto kage-scroll transition-all duration-300 ${
+                  className={`${
+                    !vis.status && !vis.units && allowedInventoryTabs.length === 0 && !vis.history
+                      ? 'lg:col-span-12 max-w-2xl w-full mx-auto'
+                      : 'lg:col-span-4'
+                  } rounded-2xl border p-5 relative overflow-y-auto kage-scroll transition-all duration-300 ${
                     isKage
                       ? 'border-red-500/35 bg-gradient-to-b from-[#1a0b0f]/92 via-[#11080a]/92 to-[#0b0607]/95 shadow-[0_0_40px_rgba(220,38,38,0.16)]'
                       : 'border-purple-500/35 bg-gradient-to-b from-[#171130]/95 via-[#110c24]/95 to-[#0d091c]/95 shadow-[0_0_40px_rgba(139,92,246,0.15)]'
@@ -1619,30 +1717,32 @@ export default function DashboardClient({
                       </div>
                     </div>
 
-                    <span
-                      className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium ${
-                        activeAccount.live_status === 'farming'
-                          ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
-                          : activeAccount.live_status === 'lobby'
-                          ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
-                          : 'bg-rose-500/15 border-rose-500/40 text-rose-300'
-                      }`}
-                    >
+                    {vis.status && (
                       <span
-                        className={`w-2 h-2 rounded-full ${
+                        className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium ${
                           activeAccount.live_status === 'farming'
-                            ? 'bg-emerald-400 animate-pulse'
+                            ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
                             : activeAccount.live_status === 'lobby'
-                            ? 'bg-amber-400'
-                            : 'bg-rose-500'
+                            ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                            : 'bg-rose-500/15 border-rose-500/40 text-rose-300'
                         }`}
-                      />
-                      {activeAccount.live_status === 'farming'
-                        ? 'ออนไลน์'
-                        : activeAccount.live_status === 'lobby'
-                        ? 'Lobby'
-                        : 'ไม่เชื่อมต่อ'}
-                    </span>
+                      >
+                        <span
+                          className={`w-2 h-2 rounded-full ${
+                            activeAccount.live_status === 'farming'
+                              ? 'bg-emerald-400 animate-pulse'
+                              : activeAccount.live_status === 'lobby'
+                              ? 'bg-amber-400'
+                              : 'bg-rose-500'
+                          }`}
+                        />
+                        {activeAccount.live_status === 'farming'
+                          ? 'ออนไลน์'
+                          : activeAccount.live_status === 'lobby'
+                          ? 'Lobby'
+                          : 'ไม่เชื่อมต่อ'}
+                      </span>
+                    )}
                   </div>
 
                   {/* Real Three.js 3D Avatar Stage & Layered Podium */}
@@ -1671,7 +1771,9 @@ export default function DashboardClient({
                     </button>
 
                     <div className="aa-btn aa-btn--level">
-                      {level > 0 ? `LV. ${level}` : activeAccount.bot_name}
+                      {vis.currencies && vis.curSet.has('level') && level > 0
+                        ? `LV. ${level}`
+                        : activeAccount.bot_name}
                     </div>
 
                     <button
@@ -1685,347 +1787,379 @@ export default function DashboardClient({
                   </div>
 
                   {/* XP Progress Bar */}
-                  <div className="space-y-1.5 mb-5">
-                    <div className="flex justify-between text-[11px]">
-                      <span className="text-zinc-400">XP Progress</span>
-                      <span
-                        className={`font-semibold ${isKage ? 'text-red-300' : 'text-red-300'}`}
-                      >
-                        {level > 0 ? `${xpPct}%` : activeAccount.current_wave || 'Ready'}
-                      </span>
-                    </div>
-                    <div
-                      className={`h-2 rounded-full border overflow-hidden ${
-                        isKage
-                          ? 'bg-[#0c0608] border-red-500/25'
-                          : 'bg-[#090506] border-red-500/25'
-                      }`}
-                    >
-                      <div
-                        className={`h-full rounded-full bg-gradient-to-r transition-all duration-500 ${
-                          theme === 'mono'
-                            ? 'from-zinc-400 via-zinc-100 to-white'
-                            : 'from-red-600 via-rose-500 to-amber-400'
-                        }`}
-                        style={{ width: `${level > 0 ? xpPct : 100}%` }}
-                      />
-                    </div>
-                    <div className="text-[11px] text-zinc-400 flex justify-between">
-                      <span>
-                        {activeAccount.current_mode || 'Lobby'}{' '}
-                        {activeAccount.current_map ? `• ${activeAccount.current_map}` : ''}
-                      </span>
-                      {maxXp > 0 && (
-                        <span>
-                          {xp.toLocaleString()} / {maxXp.toLocaleString()} XP
+                  {vis.currencies && vis.curSet.has('level') && (
+                    <div className="space-y-1.5 mb-5">
+                      <div className="flex justify-between text-[11px]">
+                        <span className="text-zinc-400">XP Progress</span>
+                        <span
+                          className={`font-semibold ${isKage ? 'text-red-300' : 'text-red-300'}`}
+                        >
+                          {level > 0
+                            ? `${xpPct}%`
+                            : vis.status
+                            ? activeAccount.current_wave || 'Ready'
+                            : 'Ready'}
                         </span>
-                      )}
+                      </div>
+                      <div
+                        className={`h-2 rounded-full border overflow-hidden ${
+                          isKage
+                            ? 'bg-[#0c0608] border-red-500/25'
+                            : 'bg-[#090506] border-red-500/25'
+                        }`}
+                      >
+                        <div
+                          className={`h-full rounded-full bg-gradient-to-r transition-all duration-500 ${
+                            theme === 'mono'
+                              ? 'from-zinc-400 via-zinc-100 to-white'
+                              : 'from-red-600 via-rose-500 to-amber-400'
+                          }`}
+                          style={{ width: `${level > 0 ? xpPct : 100}%` }}
+                        />
+                      </div>
+                      <div className="text-[11px] text-zinc-400 flex justify-between">
+                        {vis.status ? (
+                          <span>
+                            {activeAccount.current_mode || 'Lobby'}{' '}
+                            {activeAccount.current_map ? `• ${activeAccount.current_map}` : ''}
+                          </span>
+                        ) : (
+                          <span>Level Progress</span>
+                        )}
+                        {maxXp > 0 && (
+                          <span>
+                            {xp.toLocaleString()} / {maxXp.toLocaleString()} XP
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Currency & Stats Grid */}
                   <div className="grid grid-cols-2 gap-2.5 mb-3">
-                    <div className="rounded-xl border border-red-500/25 bg-[#12070a]/90 p-3 flex items-center gap-2.5">
-                      <img src="/icons/gems.png" alt="Gems" className="w-8 h-8 object-contain shrink-0" />
-                      <div className="min-w-0">
-                        <div className="text-[11px] text-zinc-400">เพชร (Gems)</div>
-                        <div className="text-sm font-bold text-white truncate">
-                          {formatCompact(Number(activeCurrencies['Gems'] || 0))}
+                    {vis.currencies && vis.curSet.has('gems') && (
+                      <div className="rounded-xl border border-red-500/25 bg-[#12070a]/90 p-3 flex items-center gap-2.5">
+                        <img src="/icons/gems.png" alt="Gems" className="w-8 h-8 object-contain shrink-0" />
+                        <div className="min-w-0">
+                          <div className="text-[11px] text-zinc-400">เพชร (Gems)</div>
+                          <div className="text-sm font-bold text-white truncate">
+                            {formatCompact(Number(activeCurrencies['Gems'] || 0))}
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
 
-                    <div className="rounded-xl border border-red-500/25 bg-[#12070a]/90 p-3 flex items-center gap-2.5">
-                      <img
-                        src="/icons/pearls.png"
-                        alt="Summer Pearls"
-                        className="w-8 h-8 object-contain shrink-0"
-                      />
-                      <div className="min-w-0">
-                        <div className="text-[11px] text-zinc-400">SummerPearls</div>
-                        <div className="text-sm font-bold text-pink-200 truncate">
-                          {formatCompact(Number(activeCurrencies['Summer Pearls'] || 0))}
+                    {vis.currencies && vis.curSet.has('pearls') && (
+                      <div className="rounded-xl border border-red-500/25 bg-[#12070a]/90 p-3 flex items-center gap-2.5">
+                        <img
+                          src="/icons/pearls.png"
+                          alt="Summer Pearls"
+                          className="w-8 h-8 object-contain shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <div className="text-[11px] text-zinc-400">SummerPearls</div>
+                          <div className="text-sm font-bold text-pink-200 truncate">
+                            {formatCompact(Number(activeCurrencies['Summer Pearls'] || 0))}
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
 
-                    <div className="rounded-xl border border-red-500/25 bg-[#12070a]/90 p-3 flex items-center gap-2.5">
-                      <img src="/icons/gold.png" alt="Gold" className="w-8 h-8 object-contain shrink-0" />
-                      <div className="min-w-0">
-                        <div className="text-[11px] text-zinc-400">ทอง (Gold)</div>
-                        <div className="text-sm font-bold text-amber-200 truncate">
-                          {Number(activeCurrencies['Gold'] || 0).toLocaleString()}
+                    {vis.currencies && vis.curSet.has('gold') && (
+                      <div className="rounded-xl border border-red-500/25 bg-[#12070a]/90 p-3 flex items-center gap-2.5">
+                        <img src="/icons/gold.png" alt="Gold" className="w-8 h-8 object-contain shrink-0" />
+                        <div className="min-w-0">
+                          <div className="text-[11px] text-zinc-400">ทอง (Gold)</div>
+                          <div className="text-sm font-bold text-amber-200 truncate">
+                            {Number(activeCurrencies['Gold'] || 0).toLocaleString()}
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
 
-                    <div className="rounded-xl border border-amber-500/35 bg-[#160a0d]/90 p-3 flex items-center gap-2.5">
-                      <img
-                        src="/icons/dawn_coin.jpg"
-                        alt="Dawn Coins"
-                        className="w-8 h-8 rounded-full object-cover shrink-0"
-                      />
-                      <div className="min-w-0">
-                        <div className="text-[11px] text-amber-300/80">Dawn Coins</div>
-                        <div className="text-sm font-bold text-amber-300 truncate">
-                          {Number(activeCurrencies['Dawn Coins'] || 0).toLocaleString()}
+                    {vis.currencies && vis.curSet.has('dawn') && (
+                      <div className="rounded-xl border border-amber-500/35 bg-[#160a0d]/90 p-3 flex items-center gap-2.5">
+                        <img
+                          src="/icons/dawn_coin.jpg"
+                          alt="Dawn Coins"
+                          className="w-8 h-8 rounded-full object-cover shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <div className="text-[11px] text-amber-300/80">Dawn Coins</div>
+                          <div className="text-sm font-bold text-amber-300 truncate">
+                            {Number(activeCurrencies['Dawn Coins'] || 0).toLocaleString()}
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
 
-                    <div
-                      title={
-                        activeTotalRerolls > 0
-                          ? `ใช้ Reroll ไปแล้วทั้งหมด ${activeTotalRerolls.toLocaleString()} ครั้ง`
-                          : undefined
-                      }
-                      className="rounded-xl border border-purple-500/35 bg-[#13091a]/90 p-3 flex items-center gap-2.5"
-                    >
-                      <img
-                        src="/item-icons/Reroll_Token.png"
-                        alt="Trait Reroll"
-                        className="w-8 h-8 object-contain shrink-0"
-                      />
-                      <div className="min-w-0">
-                        <div className="text-[11px] text-purple-300/80">Trait Reroll</div>
-                        <div className="text-sm font-bold text-purple-200 truncate">
-                          {activeTraitRerolls.toLocaleString()}
+                    {vis.currencies && vis.curSet.has('reroll') && (
+                      <div
+                        title={
+                          activeTotalRerolls > 0
+                            ? `ใช้ Reroll ไปแล้วทั้งหมด ${activeTotalRerolls.toLocaleString()} ครั้ง`
+                            : undefined
+                        }
+                        className="rounded-xl border border-purple-500/35 bg-[#13091a]/90 p-3 flex items-center gap-2.5"
+                      >
+                        <img
+                          src="/item-icons/Reroll_Token.png"
+                          alt="Trait Reroll"
+                          className="w-8 h-8 object-contain shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <div className="text-[11px] text-purple-300/80">Trait Reroll</div>
+                          <div className="text-sm font-bold text-purple-200 truncate">
+                            {activeTraitRerolls.toLocaleString()}
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
 
-                    <div
-                      title={`Limited: ${activeStarRemLimited.toLocaleString()} • ปกติ: ${activeStarRemRegular.toLocaleString()}`}
-                      className="rounded-xl border border-cyan-500/35 bg-[#09131a]/90 p-3 flex items-center gap-2.5"
-                    >
-                      <img
-                        src="/icons/star_remnant.png"
-                        alt="Star Remnant"
-                        className="w-8 h-8 object-contain shrink-0"
-                      />
-                      <div className="min-w-0">
-                        <div className="text-[11px] text-cyan-300/80">Star Remnant</div>
-                        <div className="text-sm font-bold text-cyan-200 truncate">
-                          {activeStarRemnants.toLocaleString()}
+                    {vis.currencies && vis.curSet.has('remnant') && (
+                      <div
+                        title={`Limited: ${activeStarRemLimited.toLocaleString()} • ปกติ: ${activeStarRemRegular.toLocaleString()}`}
+                        className="rounded-xl border border-cyan-500/35 bg-[#09131a]/90 p-3 flex items-center gap-2.5"
+                      >
+                        <img
+                          src="/icons/star_remnant.png"
+                          alt="Star Remnant"
+                          className="w-8 h-8 object-contain shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <div className="text-[11px] text-cyan-300/80">Star Remnant</div>
+                          <div className="text-sm font-bold text-cyan-200 truncate">
+                            {activeStarRemnants.toLocaleString()}
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
 
                     {/* Battle Pass Compact Card (Click for Tier Details) */}
-                    <button
-                      type="button"
-                      onClick={() => activeBattlePass && setShowBpModal(true)}
-                      className={`col-span-2 rounded-xl border p-3 text-left transition ${
-                        activeBattlePass
-                          ? 'border-amber-400/35 bg-gradient-to-r from-[#1b1106]/95 to-[#12070a]/95 hover:border-amber-300/60 cursor-pointer'
-                          : 'border-white/10 bg-[#12070a]/60 cursor-default'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <Crown
-                            className={`w-4 h-4 shrink-0 ${
-                              activeBattlePass?.has_premium ? 'text-amber-400' : 'text-zinc-400'
-                            }`}
-                          />
-                          <span className="text-xs font-bold text-white truncate">
-                            {activeBattlePass?.season_name
-                              ? `Battle Pass • ${activeBattlePass.season_name}`
-                              : 'Battle Pass'}
-                          </span>
-                          {activeBattlePass?.has_premium && (
-                            <span className="text-[9.5px] font-extrabold px-1.5 py-0.5 rounded bg-amber-400/20 border border-amber-400/40 text-amber-200 shrink-0">
-                              PREMIUM
-                            </span>
-                          )}
-                        </div>
-                        {activeBattlePass ? (
-                          <span className="text-xs font-extrabold text-amber-300 shrink-0">
-                            {activeBattlePass.level || 0}/{activeBattlePass.max_level || 60}
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-zinc-500">รอซิงค์จากสคริปต์</span>
-                        )}
-                      </div>
-                      {activeBattlePass && (
-                        <>
-                          <div className="h-1.5 rounded-full bg-black/50 overflow-hidden mb-1">
-                            <div
-                              className="h-full rounded-full bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-400 transition-all"
-                              style={{
-                                width: `${Math.min(
-                                  100,
-                                  Math.round(
-                                    ((activeBattlePass.level || 0) /
-                                      Math.max(1, activeBattlePass.max_level || 60)) *
-                                      100
-                                  )
-                                )}%`,
-                              }}
+                    {vis.battlepass && (
+                      <button
+                        type="button"
+                        onClick={() => activeBattlePass && setShowBpModal(true)}
+                        className={`col-span-2 rounded-xl border p-3 text-left transition ${
+                          activeBattlePass
+                            ? 'border-amber-400/35 bg-gradient-to-r from-[#1b1106]/95 to-[#12070a]/95 hover:border-amber-300/60 cursor-pointer'
+                            : 'border-white/10 bg-[#12070a]/60 cursor-default'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Crown
+                              className={`w-4 h-4 shrink-0 ${
+                                activeBattlePass?.has_premium ? 'text-amber-400' : 'text-zinc-400'
+                              }`}
                             />
-                          </div>
-                          <div className="flex items-center justify-between text-[10px] text-zinc-400">
-                            <span>{(activeBattlePass.xp || 0).toLocaleString()} XP</span>
-                            <span className="text-amber-300/90">
-                              รับแล้ว {activeBattlePass.normal_claimed || 0}/
-                              {activeBattlePass.max_level || 60} • กดดูรายละเอียด →
+                            <span className="text-xs font-bold text-white truncate">
+                              {activeBattlePass?.season_name
+                                ? `Battle Pass • ${activeBattlePass.season_name}`
+                                : 'Battle Pass'}
                             </span>
-                          </div>
-                        </>
-                      )}
-                    </button>
-
-                    {/* Infinity Mansion / Tower Card */}
-                    <div
-                      className={`col-span-2 rounded-xl border p-3 ${
-                        activeTower
-                          ? 'border-purple-400/35 bg-gradient-to-br from-purple-950/35 via-[#12070a]/90 to-[#12070a]/90'
-                          : 'border-red-500/20 bg-[#12070a]/70'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Layers
-                            className={`w-4 h-4 shrink-0 ${
-                              activeTower ? 'text-purple-300' : 'text-zinc-500'
-                            }`}
-                          />
-                          <span className="text-[11px] font-semibold text-zinc-200 truncate">
-                            Infinity Mansion
-                          </span>
-                          {activeTower?.season && (
-                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-400/30 text-[9px] font-bold text-emerald-300 shrink-0">
-                              {activeTower.season}
-                            </span>
-                          )}
-                        </div>
-                        {activeTower?.active_room ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/25 border border-purple-400/45 text-[10px] font-bold text-purple-200 animate-pulse shrink-0">
-                            ⚔️ กำลังไต่ Room {activeTower.active_room}
-                          </span>
-                        ) : activeTower?.infinite_room ? (
-                          <span className="text-xs font-extrabold text-purple-200 shrink-0">
-                            Room {activeTower.infinite_room}
-                          </span>
-                        ) : (
-                          <span className="text-[11px] text-zinc-500">รอซิงค์ข้อมูลหอคอย</span>
-                        )}
-                      </div>
-
-                      {activeTower && (
-                        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-                          <div className="flex items-center gap-1.5 text-zinc-300">
-                            {activeTower.infinite_room ? (
-                              <span className="font-bold text-purple-200">
-                                Furthest Room {activeTower.infinite_room}
-                              </span>
-                            ) : null}
-                            {(activeTower.rank_title || activeTower.rank_pct) && (
-                              <span className="text-zinc-400">
-                                •{' '}
-                                <span className="text-fuchsia-300 font-semibold">
-                                  {activeTower.rank_title || 'Ranked'}
-                                </span>
-                                {activeTower.rank_pct ? ` (${activeTower.rank_pct})` : ''}
+                            {activeBattlePass?.has_premium && (
+                              <span className="text-[9.5px] font-extrabold px-1.5 py-0.5 rounded bg-amber-400/20 border border-amber-400/40 text-amber-200 shrink-0">
+                                PREMIUM
                               </span>
                             )}
                           </div>
+                          {activeBattlePass ? (
+                            <span className="text-xs font-extrabold text-amber-300 shrink-0">
+                              {activeBattlePass.level || 0}/{activeBattlePass.max_level || 60}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-zinc-500">รอซิงค์จากสคริปต์</span>
+                          )}
                         </div>
-                      )}
-                    </div>
-
-                    {/* Event Tower (Misty Tower) Card */}
-                    {(() => {
-                      const evMaxFromMap = activeTower?.event_floors
-                        ? Math.max(0, ...Object.values(activeTower.event_floors))
-                        : 0;
-                      const evCleared =
-                        typeof activeTower?.event_cleared === 'number'
-                          ? activeTower.event_cleared
-                          : evMaxFromMap;
-                      const hasEventTower =
-                        Boolean(activeTower?.event_name) ||
-                        evCleared > 0 ||
-                        Boolean(activeTower?.active_event_floor);
-                      return (
-                        <div
-                          className={`col-span-2 rounded-xl border p-3 ${
-                            hasEventTower
-                              ? 'border-teal-400/35 bg-gradient-to-br from-teal-950/35 via-[#071214]/90 to-[#12070a]/90'
-                              : 'border-red-500/20 bg-[#12070a]/70'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <Flame
-                                className={`w-4 h-4 shrink-0 ${
-                                  hasEventTower ? 'text-teal-300' : 'text-zinc-500'
-                                }`}
+                        {activeBattlePass && (
+                          <>
+                            <div className="h-1.5 rounded-full bg-black/50 overflow-hidden mb-1">
+                              <div
+                                className="h-full rounded-full bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-400 transition-all"
+                                style={{
+                                  width: `${Math.min(
+                                    100,
+                                    Math.round(
+                                      ((activeBattlePass.level || 0) /
+                                        Math.max(1, activeBattlePass.max_level || 60)) *
+                                        100
+                                    )
+                                  )}%`,
+                                }}
                               />
-                              <span className="text-[11px] font-semibold text-zinc-200 truncate">
-                                {activeTower?.event_name || 'Event Tower'}
+                            </div>
+                            <div className="flex items-center justify-between text-[10px] text-zinc-400">
+                              <span>{(activeBattlePass.xp || 0).toLocaleString()} XP</span>
+                              <span className="text-amber-300/90">
+                                รับแล้ว {activeBattlePass.normal_claimed || 0}/
+                                {activeBattlePass.max_level || 60} • กดดูรายละเอียด →
                               </span>
-                              {activeTower?.event_world && (
-                                <span className="px-1.5 py-0.5 rounded bg-teal-500/15 border border-teal-400/30 text-[9px] font-bold text-teal-200 shrink-0">
-                                  {activeTower.event_world}
+                            </div>
+                          </>
+                        )}
+                      </button>
+                    )}
+
+                    {/* Infinity Mansion / Tower Card */}
+                    {vis.tower && (
+                      <div
+                        className={`col-span-2 rounded-xl border p-3 ${
+                          activeTower
+                            ? 'border-purple-400/35 bg-gradient-to-br from-purple-950/35 via-[#12070a]/90 to-[#12070a]/90'
+                            : 'border-red-500/20 bg-[#12070a]/70'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Layers
+                              className={`w-4 h-4 shrink-0 ${
+                                activeTower ? 'text-purple-300' : 'text-zinc-500'
+                              }`}
+                            />
+                            <span className="text-[11px] font-semibold text-zinc-200 truncate">
+                              Infinity Mansion
+                            </span>
+                            {activeTower?.season && (
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-400/30 text-[9px] font-bold text-emerald-300 shrink-0">
+                                {activeTower.season}
+                              </span>
+                            )}
+                          </div>
+                          {activeTower?.active_room ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/25 border border-purple-400/45 text-[10px] font-bold text-purple-200 animate-pulse shrink-0">
+                              ⚔️ กำลังไต่ Room {activeTower.active_room}
+                            </span>
+                          ) : activeTower?.infinite_room ? (
+                            <span className="text-xs font-extrabold text-purple-200 shrink-0">
+                              Room {activeTower.infinite_room}
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-zinc-500">รอซิงค์ข้อมูลหอคอย</span>
+                          )}
+                        </div>
+
+                        {activeTower && (
+                          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                            <div className="flex items-center gap-1.5 text-zinc-300">
+                              {activeTower.infinite_room ? (
+                                <span className="font-bold text-purple-200">
+                                  Furthest Room {activeTower.infinite_room}
+                                </span>
+                              ) : null}
+                              {(activeTower.rank_title || activeTower.rank_pct) && (
+                                <span className="text-zinc-400">
+                                  •{' '}
+                                  <span className="text-fuchsia-300 font-semibold">
+                                    {activeTower.rank_title || 'Ranked'}
+                                  </span>
+                                  {activeTower.rank_pct ? ` (${activeTower.rank_pct})` : ''}
                                 </span>
                               )}
                             </div>
-                            {activeTower?.active_event_floor ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-teal-500/25 border border-teal-400/45 text-[10px] font-bold text-teal-200 animate-pulse shrink-0">
-                                ⚔️ กำลังไต่ Floor {activeTower.active_event_floor}
-                              </span>
-                            ) : hasEventTower ? (
-                              <span className="text-xs font-extrabold text-teal-200 shrink-0">
-                                Floor {evCleared + 1}
-                              </span>
-                            ) : (
-                              <span className="text-[11px] text-zinc-500">รอซิงค์ Event Tower</span>
-                            )}
                           </div>
+                        )}
+                      </div>
+                    )}
 
-                          {hasEventTower && (
-                            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-                              <div className="flex flex-wrap items-center gap-1.5 text-zinc-300">
-                                <span className="font-bold text-teal-200">
-                                  Cleared {evCleared} ชั้น
+                    {/* Event Tower (Misty Tower) Card */}
+                    {vis.tower &&
+                      (() => {
+                        const evMaxFromMap = activeTower?.event_floors
+                          ? Math.max(0, ...Object.values(activeTower.event_floors))
+                          : 0;
+                        const evCleared =
+                          typeof activeTower?.event_cleared === 'number'
+                            ? activeTower.event_cleared
+                            : evMaxFromMap;
+                        const hasEventTower =
+                          Boolean(activeTower?.event_name) ||
+                          evCleared > 0 ||
+                          Boolean(activeTower?.active_event_floor);
+                        return (
+                          <div
+                            className={`col-span-2 rounded-xl border p-3 ${
+                              hasEventTower
+                                ? 'border-teal-400/35 bg-gradient-to-br from-teal-950/35 via-[#071214]/90 to-[#12070a]/90'
+                                : 'border-red-500/20 bg-[#12070a]/70'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <Flame
+                                  className={`w-4 h-4 shrink-0 ${
+                                    hasEventTower ? 'text-teal-300' : 'text-zinc-500'
+                                  }`}
+                                />
+                                <span className="text-[11px] font-semibold text-zinc-200 truncate">
+                                  {activeTower?.event_name || 'Event Tower'}
                                 </span>
-                                {activeTower?.event_rank_pct && (
-                                  <span className="text-zinc-400">
-                                    • <span className="text-rose-300 font-semibold">{activeTower.event_rank_pct}</span>
-                                  </span>
-                                )}
-                                {activeTower?.event_rank && (
-                                  <span className="text-sky-300 font-semibold">
-                                    ({activeTower.event_rank})
+                                {activeTower?.event_world && (
+                                  <span className="px-1.5 py-0.5 rounded bg-teal-500/15 border border-teal-400/30 text-[9px] font-bold text-teal-200 shrink-0">
+                                    {activeTower.event_world}
                                   </span>
                                 )}
                               </div>
+                              {activeTower?.active_event_floor ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-teal-500/25 border border-teal-400/45 text-[10px] font-bold text-teal-200 animate-pulse shrink-0">
+                                  ⚔️ กำลังไต่ Floor {activeTower.active_event_floor}
+                                </span>
+                              ) : hasEventTower ? (
+                                <span className="text-xs font-extrabold text-teal-200 shrink-0">
+                                  Floor {evCleared + 1}
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-zinc-500">รอซิงค์ Event Tower</span>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      );
-                    })()}
 
-                    <div className="col-span-2 rounded-xl border border-red-500/25 bg-[#12070a]/90 p-3 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-300 shrink-0">
-                          <Clock className="w-4 h-4" />
+                            {hasEventTower && (
+                              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                                <div className="flex flex-wrap items-center gap-1.5 text-zinc-300">
+                                  <span className="font-bold text-teal-200">
+                                    Cleared {evCleared} ชั้น
+                                  </span>
+                                  {activeTower?.event_rank_pct && (
+                                    <span className="text-zinc-400">
+                                      •{' '}
+                                      <span className="text-rose-300 font-semibold">
+                                        {activeTower.event_rank_pct}
+                                      </span>
+                                    </span>
+                                  )}
+                                  {activeTower?.event_rank && (
+                                    <span className="text-sky-300 font-semibold">
+                                      ({activeTower.event_rank})
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                    {vis.history && (
+                      <div className="col-span-2 rounded-xl border border-red-500/25 bg-[#12070a]/90 p-3 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-300 shrink-0">
+                            <Clock className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="text-[11px] text-zinc-400">เวลาแมตช์ที่บันทึก</div>
+                            <div className="text-sm font-bold text-white">
+                              {formatDuration(analytics.totalSec)}
+                            </div>
+                          </div>
                         </div>
-                        <div>
-                          <div className="text-[11px] text-zinc-400">เวลาแมตช์ที่บันทึก</div>
-                          <div className="text-sm font-bold text-white">
-                            {formatDuration(analytics.totalSec)}
+                        <div className="text-right">
+                          <div className="text-[11px] text-zinc-400">Winrate</div>
+                          <div className="text-sm font-bold text-emerald-400">
+                            {analytics.winrate}% ({analytics.totalRuns} รอบ)
                           </div>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <div className="text-[11px] text-zinc-400">Winrate</div>
-                        <div className="text-sm font-bold text-emerald-400">
-                          {analytics.winrate}% ({analytics.totalRuns} รอบ)
-                        </div>
-                      </div>
-                    </div>
+                    )}
                   </div>
 
                   {/* Card Footer */}
@@ -2038,49 +2172,58 @@ export default function DashboardClient({
                 </section>
 
                 {/* RIGHT COLUMN: Fixed Header/Filters + Scrollable Inventory Grid */}
-                <section className="lg:col-span-8 lg:h-full lg:min-h-0 flex flex-col gap-4">
-                  {/* Live Match & 6-Unit Team Banner */}
-                  <div className="shrink-0 rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="relative w-20 h-12 rounded-xl overflow-hidden shrink-0 border border-white/15 bg-[#090506]">
-                        <img
-                          src={getMapThumbnail(activeAccount.current_map, activeAccount.current_mode)}
-                          alt={activeAccount.current_map || 'Lobby'}
-                          className="w-full h-full object-cover"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/55 to-transparent" />
-                      </div>
-                      <div className="min-w-0 space-y-1">
-                        <div className="flex items-center gap-2 text-xs">
-                          <span
-                            className={`w-2 h-2 rounded-full ${
-                              activeAccount.live_status === 'farming'
-                                ? 'bg-emerald-400 animate-pulse'
-                                : activeAccount.live_status === 'lobby'
-                                ? 'bg-sky-400'
-                                : 'bg-zinc-500'
-                            }`}
-                          />
-                          <span className="font-semibold text-zinc-200">
-                            {activeAccount.live_status === 'farming'
-                              ? 'อยู่ในแมตช์'
-                              : activeAccount.live_status === 'lobby'
-                              ? 'อยู่ใน Lobby'
-                              : 'ออฟไลน์'}
-                          </span>
-                        </div>
-                        <div className="text-base font-bold text-white truncate">
-                          {activeAccount.current_mode || 'Lobby'}
-                        </div>
-                        <div className="text-xs text-zinc-400 truncate">
-                          {activeAccount.current_map || 'Main Lobby'}
-                        </div>
-                      </div>
-                    </div>
+                {(vis.status || vis.units || allowedInventoryTabs.length > 0 || vis.history) && (
+                  <section className="lg:col-span-8 lg:h-full lg:min-h-0 flex flex-col gap-4">
+                    {/* Live Match & 6-Unit Team Banner */}
+                    {(vis.status || vis.units) && (
+                      <div className="shrink-0 rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+                        {vis.status ? (
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="relative w-20 h-12 rounded-xl overflow-hidden shrink-0 border border-white/15 bg-[#090506]">
+                              <img
+                                src={getMapThumbnail(activeAccount.current_map, activeAccount.current_mode)}
+                                alt={activeAccount.current_map || 'Lobby'}
+                                className="w-full h-full object-cover"
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/55 to-transparent" />
+                            </div>
+                            <div className="min-w-0 space-y-1">
+                              <div className="flex items-center gap-2 text-xs">
+                                <span
+                                  className={`w-2 h-2 rounded-full ${
+                                    activeAccount.live_status === 'farming'
+                                      ? 'bg-emerald-400 animate-pulse'
+                                      : activeAccount.live_status === 'lobby'
+                                      ? 'bg-sky-400'
+                                      : 'bg-zinc-500'
+                                  }`}
+                                />
+                                <span className="font-semibold text-zinc-200">
+                                  {activeAccount.live_status === 'farming'
+                                    ? 'อยู่ในแมตช์'
+                                    : activeAccount.live_status === 'lobby'
+                                    ? 'อยู่ใน Lobby'
+                                    : 'ออฟไลน์'}
+                                </span>
+                              </div>
+                              <div className="text-base font-bold text-white truncate">
+                                {activeAccount.current_mode || 'Lobby'}
+                              </div>
+                              <div className="text-xs text-zinc-400 truncate">
+                                {activeAccount.current_map || 'Main Lobby'}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-xs font-semibold text-zinc-300">
+                            ทีมยูนิตที่ใช้งาน ({activeTeam.length} ตัว)
+                          </div>
+                        )}
 
-                    <div className="flex flex-wrap items-center gap-2">
-                      {/* 6 Equipped Unit Slots (aavalues.trade halftone + rarity frame style) */}
-                      {[1, 2, 3, 4, 5, 6].map((slotNum) => {
+                        <div className="flex flex-wrap items-center gap-2">
+                          {/* 6 Equipped Unit Slots (aavalues.trade halftone + rarity frame style) */}
+                          {vis.units &&
+                            [1, 2, 3, 4, 5, 6].map((slotNum) => {
                         const unit = activeTeam.find((u) => u.slot === slotNum);
                         const unitImg = unit ? getUnitPortrait(unit.name) : '';
                         const traitImg = unit ? getTraitIcon(unit.trait) : null;
@@ -2154,99 +2297,117 @@ export default function DashboardClient({
                       })}
 
                       {/* Live Wave Badge (exact same 80x80 size as unit slots) */}
-                      <div className="w-[74px] h-[74px] sm:w-20 sm:h-20 rounded-xl border border-red-500/35 bg-[#0b0406] flex flex-col items-center justify-center shrink-0 text-center">
-                        <div className="flex items-center justify-center gap-0.5 text-[10px] text-red-300/80 leading-none">
-                          <Waves className="w-3 h-3" />
-                          <span>เวฟ</span>
+                      {vis.status && (
+                        <div className="w-[74px] h-[74px] sm:w-20 sm:h-20 rounded-xl border border-red-500/35 bg-[#0b0406] flex flex-col items-center justify-center shrink-0 text-center">
+                          <div className="flex items-center justify-center gap-0.5 text-[10px] text-red-300/80 leading-none">
+                            <Waves className="w-3 h-3" />
+                            <span>เวฟ</span>
+                          </div>
+                          <div className="text-xl font-bold text-white leading-tight mt-0.5">
+                            {activeAccount.current_wave && activeAccount.current_wave !== '-'
+                              ? activeAccount.current_wave.replace(/Wave\s*/i, '')
+                              : '-'}
+                          </div>
                         </div>
-                        <div className="text-xl font-bold text-white leading-tight mt-0.5">
-                          {activeAccount.current_wave && activeAccount.current_wave !== '-'
-                            ? activeAccount.current_wave.replace(/Wave\s*/i, '')
-                            : '-'}
-                        </div>
-                      </div>
+                      )}
                     </div>
                   </div>
+                    )}
 
                   {/* Live KPI Strip */}
-                  <div className="shrink-0 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3.5">
-                      <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
-                        <span>บอทออนไลน์</span>
-                        <Bot className="w-4 h-4 text-emerald-400" />
-                      </div>
-                      <div className="text-xl font-bold text-white">
-                        {analytics.onlineCount}{' '}
-                        <span className="text-xs font-normal text-zinc-500">/ {accounts.length}</span>
-                      </div>
-                    </div>
+                  {(vis.status ||
+                    (vis.currencies && (vis.curSet.has('gems') || vis.curSet.has('pearls'))) ||
+                    vis.history) && (
+                    <div className="shrink-0 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {vis.status && (
+                        <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3.5">
+                          <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
+                            <span>บอทออนไลน์</span>
+                            <Bot className="w-4 h-4 text-emerald-400" />
+                          </div>
+                          <div className="text-xl font-bold text-white">
+                            {analytics.onlineCount}{' '}
+                            <span className="text-xs font-normal text-zinc-500">/ {accounts.length}</span>
+                          </div>
+                        </div>
+                      )}
 
-                    <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3.5">
-                      <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
-                        <span>Gems / ชม.</span>
-                        <img src="/icons/gems.png" alt="Gems" className="w-4 h-4 object-contain" />
-                      </div>
-                      <div className="text-xl font-bold text-white flex items-baseline gap-1.5">
-                        <span>{analytics.gemsPerHr.toLocaleString()}</span>
-                        {analytics.gemsPerRun > 0 && (
-                          <span className="text-[11px] font-medium text-emerald-300">
-                            +{analytics.gemsPerRun}/ตา
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                      {vis.currencies && vis.curSet.has('gems') && (
+                        <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3.5">
+                          <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
+                            <span>Gems / ชม.</span>
+                            <img src="/icons/gems.png" alt="Gems" className="w-4 h-4 object-contain" />
+                          </div>
+                          <div className="text-xl font-bold text-white flex items-baseline gap-1.5">
+                            <span>{analytics.gemsPerHr.toLocaleString()}</span>
+                            {analytics.gemsPerRun > 0 && (
+                              <span className="text-[11px] font-medium text-emerald-300">
+                                +{analytics.gemsPerRun}/ตา
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
-                    <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3.5">
-                      <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
-                        <span>Pearls / ชม.</span>
-                        <img src="/icons/pearls.png" alt="Pearls" className="w-4 h-4 object-contain" />
-                      </div>
-                      <div className="text-xl font-bold text-pink-200 flex items-baseline gap-1.5">
-                        <span>{analytics.pearlsPerHr.toLocaleString()}</span>
-                        {analytics.pearlsPerRun > 0 && (
-                          <span className="text-[11px] font-medium text-pink-300/90">
-                            +{analytics.pearlsPerRun}/ตา
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                      {vis.currencies && vis.curSet.has('pearls') && (
+                        <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3.5">
+                          <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
+                            <span>Pearls / ชม.</span>
+                            <img src="/icons/pearls.png" alt="Pearls" className="w-4 h-4 object-contain" />
+                          </div>
+                          <div className="text-xl font-bold text-pink-200 flex items-baseline gap-1.5">
+                            <span>{analytics.pearlsPerHr.toLocaleString()}</span>
+                            {analytics.pearlsPerRun > 0 && (
+                              <span className="text-[11px] font-medium text-pink-300/90">
+                                +{analytics.pearlsPerRun}/ตา
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
-                    <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3.5">
-                      <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
-                        <span>เฉลี่ยต่อรอบ</span>
-                        <Clock className="w-4 h-4 text-red-400" />
-                      </div>
-                      <div className="text-xl font-bold text-white flex items-baseline gap-1.5">
-                        <span>{formatDuration(analytics.avgSec)}</span>
-                        {analytics.totalRuns > 0 && (
-                          <span className="text-[11px] font-normal text-zinc-400">
-                            ({analytics.totalRuns} ตา)
-                          </span>
-                        )}
-                      </div>
+                      {vis.history && (
+                        <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3.5">
+                          <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
+                            <span>เฉลี่ยต่อรอบ</span>
+                            <Clock className="w-4 h-4 text-red-400" />
+                          </div>
+                          <div className="text-xl font-bold text-white flex items-baseline gap-1.5">
+                            <span>{formatDuration(analytics.avgSec)}</span>
+                            {analytics.totalRuns > 0 && (
+                              <span className="text-[11px] font-normal text-zinc-400">
+                                ({analytics.totalRuns} ตา)
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  )}
 
                   {/* Primary Mode Switch: ของที่ได้ (Default Hero) + กระเป๋า (On-Demand) */}
-                  <div className="shrink-0 rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3 space-y-2.5">
-                    <div className="flex flex-wrap items-center justify-between gap-2.5">
-                      <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="หมวดคลัง">
-                        {(
-                          [
-                            { id: 'gained', label: `✨ ของที่ได้ (${activeBotRunStats.sortedLoot.length})` },
-                            { id: 'all', label: `กระเป๋า (${allBotItems.length})` },
-                            { id: 'units', label: `ยูนิต (${unitStats.total})` },
-                            { id: 'team', label: `ทีม (${activeTeam.length})` },
-                            { id: 'portals', label: `ประตู (${categoryCounts.portals})` },
-                            { id: 'material', label: `วัตถุดิบ (${categoryCounts.material})` },
-                            { id: 'star', label: `ดาว (${categoryCounts.star})` },
-                            { id: 'relic', label: `เรลิก (${categoryCounts.relic})` },
-                            { id: 'key', label: `คีย์ (${categoryCounts.key})` },
-                            { id: 'skin', label: `สกิน (${categoryCounts.skin})` },
-                            { id: 'xp_food', label: `อาหาร XP (${categoryCounts.xp_food})` },
-                            { id: 'other', label: `อื่นๆ (${categoryCounts.other})` },
-                          ] as const
-                        ).map((t) => (
+                  {allowedInventoryTabs.length > 0 && (
+                    <div className="shrink-0 rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-3 space-y-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2.5">
+                        <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="หมวดคลัง">
+                          {(
+                            [
+                              { id: 'gained', label: `✨ ของที่ได้ (${activeBotRunStats.sortedLoot.length})` },
+                              { id: 'all', label: `กระเป๋า (${allBotItems.length})` },
+                              { id: 'units', label: `ยูนิต (${unitStats.total})` },
+                              { id: 'team', label: `ทีม (${activeTeam.length})` },
+                              { id: 'portals', label: `ประตู (${categoryCounts.portals})` },
+                              { id: 'material', label: `วัตถุดิบ (${categoryCounts.material})` },
+                              { id: 'star', label: `ดาว (${categoryCounts.star})` },
+                              { id: 'relic', label: `เรลิก (${categoryCounts.relic})` },
+                              { id: 'key', label: `คีย์ (${categoryCounts.key})` },
+                              { id: 'skin', label: `สกิน (${categoryCounts.skin})` },
+                              { id: 'xp_food', label: `อาหาร XP (${categoryCounts.xp_food})` },
+                              { id: 'other', label: `อื่นๆ (${categoryCounts.other})` },
+                            ] as const
+                          )
+                            .filter((t) => allowedInventoryTabs.includes(t.id))
+                            .map((t) => (
                           <button
                             key={t.id}
                             role="tab"
@@ -2438,11 +2599,13 @@ export default function DashboardClient({
                         </div>
                       </div>
                     )}
-                  </div>
+                    </div>
+                  )}
 
                   {/* Scrollable Gained Loot / Inventory / Team / Recent Runs Area */}
                   <div className="lg:flex-1 lg:min-h-0 lg:overflow-y-auto kage-scroll pr-1 space-y-4 pb-2">
-                  {inventoryTab === 'gained' ? (
+                  {allowedInventoryTabs.length > 0 && (
+                    inventoryTab === 'gained' ? (
                     activeBotRunStats.sortedLoot.length > 0 ? (
                       <div
                         key={`gained-${lootScope}-${lootViewMode}-${rarityFilter}-${hours}-${activeAccount.id}`}
@@ -2792,10 +2955,11 @@ export default function DashboardClient({
                           : 'ยังไม่มีรายการไอเทมจากบอทนี้ (ระบบจะซิงค์เมื่อเปิดกระเป๋า Items หรือจบ Dungeon Room)'}
                       </p>
                     </div>
-                  )}
+                  ))}
 
                   {/* Quick Recent Runs Preview */}
-                  <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/80 overflow-hidden">
+                  {vis.history && (
+                    <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/80 overflow-hidden">
                     <div className="px-4 py-3 border-b border-red-500/20 flex items-center justify-between">
                       <h2 className="text-xs font-bold uppercase tracking-wider text-red-200 flex items-center gap-2">
                         <Activity className="w-4 h-4 text-red-400" />
@@ -2855,8 +3019,10 @@ export default function DashboardClient({
                       )}
                     </div>
                   </div>
+                  )}
                   </div>
                 </section>
+                )}
               </div>
             )}
           </>
@@ -2866,64 +3032,74 @@ export default function DashboardClient({
           <div className="space-y-5 animate-fade-slide">
             {/* Multi-Bot Aggregate Shop KPIs */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-              <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
-                <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
-                  <span>บอทออนไลน์รวม</span>
-                  <Bot className="w-4 h-4 text-emerald-400" />
+              {vis.status && (
+                <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
+                  <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
+                    <span>บอทออนไลน์รวม</span>
+                    <Bot className="w-4 h-4 text-emerald-400" />
+                  </div>
+                  <div className="text-2xl font-bold text-white">
+                    {analytics.onlineCount}{' '}
+                    <span className="text-sm font-normal text-zinc-500">/ {accounts.length}</span>
+                  </div>
                 </div>
-                <div className="text-2xl font-bold text-white">
-                  {analytics.onlineCount}{' '}
-                  <span className="text-sm font-normal text-zinc-500">/ {accounts.length}</span>
-                </div>
-              </div>
+              )}
 
-              <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
-                <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
-                  <span>รวม Gems ทุกบอท</span>
-                  <img src="/icons/gems.png" alt="Gems" className="w-4 h-4 object-contain" />
+              {vis.currencies && vis.curSet.has('gems') && (
+                <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
+                  <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
+                    <span>รวม Gems ทุกบอท</span>
+                    <img src="/icons/gems.png" alt="Gems" className="w-4 h-4 object-contain" />
+                  </div>
+                  <div className="text-2xl font-bold text-white">
+                    {formatCompact(multiBotTotals.gems)}
+                  </div>
                 </div>
-                <div className="text-2xl font-bold text-white">
-                  {formatCompact(multiBotTotals.gems)}
-                </div>
-              </div>
+              )}
 
-              <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
-                <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
-                  <span>รวม Pearls ทุกบอท</span>
-                  <img src="/icons/pearls.png" alt="Pearls" className="w-4 h-4 object-contain" />
+              {vis.currencies && vis.curSet.has('pearls') && (
+                <div className="rounded-2xl border border-red-500/25 bg-[#13080b]/85 p-4">
+                  <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
+                    <span>รวม Pearls ทุกบอท</span>
+                    <img src="/icons/pearls.png" alt="Pearls" className="w-4 h-4 object-contain" />
+                  </div>
+                  <div className="text-2xl font-bold text-pink-200">
+                    {formatCompact(multiBotTotals.pearls)}
+                  </div>
                 </div>
-                <div className="text-2xl font-bold text-pink-200">
-                  {formatCompact(multiBotTotals.pearls)}
-                </div>
-              </div>
+              )}
 
-              <div className="rounded-2xl border border-purple-500/30 bg-[#130816]/85 p-4">
-                <div className="flex items-center justify-between text-xs text-purple-300/80 mb-1">
-                  <span>รวม Trait Reroll</span>
-                  <img
-                    src="/item-icons/Reroll_Token.png"
-                    alt="Trait Reroll"
-                    className="w-4 h-4 object-contain"
-                  />
+              {vis.currencies && vis.curSet.has('reroll') && (
+                <div className="rounded-2xl border border-purple-500/30 bg-[#130816]/85 p-4">
+                  <div className="flex items-center justify-between text-xs text-purple-300/80 mb-1">
+                    <span>รวม Trait Reroll</span>
+                    <img
+                      src="/item-icons/Reroll_Token.png"
+                      alt="Trait Reroll"
+                      className="w-4 h-4 object-contain"
+                    />
+                  </div>
+                  <div className="text-2xl font-bold text-purple-200">
+                    {multiBotTotals.traitRerolls.toLocaleString()}
+                  </div>
                 </div>
-                <div className="text-2xl font-bold text-purple-200">
-                  {multiBotTotals.traitRerolls.toLocaleString()}
-                </div>
-              </div>
+              )}
 
-              <div className="rounded-2xl border border-cyan-500/30 bg-[#08131a]/85 p-4">
-                <div className="flex items-center justify-between text-xs text-cyan-300/80 mb-1">
-                  <span>รวม Star Remnant</span>
-                  <img
-                    src="/icons/star_remnant.png"
-                    alt="Star Remnant"
-                    className="w-4 h-4 object-contain"
-                  />
+              {vis.currencies && vis.curSet.has('remnant') && (
+                <div className="rounded-2xl border border-cyan-500/30 bg-[#08131a]/85 p-4">
+                  <div className="flex items-center justify-between text-xs text-cyan-300/80 mb-1">
+                    <span>รวม Star Remnant</span>
+                    <img
+                      src="/icons/star_remnant.png"
+                      alt="Star Remnant"
+                      className="w-4 h-4 object-contain"
+                    />
+                  </div>
+                  <div className="text-2xl font-bold text-cyan-200">
+                    {multiBotTotals.starRemnants.toLocaleString()}
+                  </div>
                 </div>
-                <div className="text-2xl font-bold text-cyan-200">
-                  {multiBotTotals.starRemnants.toLocaleString()}
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Multi-Bot Comparison Table */}
@@ -2980,19 +3156,33 @@ export default function DashboardClient({
                     <thead>
                       <tr className="text-[11px] uppercase tracking-wider text-zinc-400 border-b border-white/10 bg-black/25">
                         {!readOnly && <th className="py-3 px-3 w-8" />}
-                        <th className="py-3 px-3 font-semibold">สถานะ</th>
+                        {vis.status && <th className="py-3 px-3 font-semibold">สถานะ</th>}
                         <th className="py-3 px-3 font-semibold">บอท / ไอดี</th>
-                        <th className="py-3 px-3 font-semibold">Level</th>
-                        <th className="py-3 px-3 font-semibold">ด่าน / เวฟ</th>
-                        <th className="py-3 px-3 font-semibold">Gems</th>
-                        <th className="py-3 px-3 font-semibold">Pearls</th>
-                        <th className="py-3 px-3 font-semibold">Gold</th>
-                        <th className="py-3 px-3 font-semibold">Dawn</th>
-                        <th className="py-3 px-3 font-semibold">Reroll</th>
-                        <th className="py-3 px-3 font-semibold">Remnant</th>
-                        <th className="py-3 px-3 font-semibold">Battle Pass</th>
-                        <th className="py-3 px-3 font-semibold">หอคอย</th>
-                        <th className="py-3 px-3 font-semibold">ทีม &amp; คลัง</th>
+                        {vis.currencies && vis.curSet.has('level') && (
+                          <th className="py-3 px-3 font-semibold">Level</th>
+                        )}
+                        {vis.status && <th className="py-3 px-3 font-semibold">ด่าน / เวฟ</th>}
+                        {vis.currencies && vis.curSet.has('gems') && (
+                          <th className="py-3 px-3 font-semibold">Gems</th>
+                        )}
+                        {vis.currencies && vis.curSet.has('pearls') && (
+                          <th className="py-3 px-3 font-semibold">Pearls</th>
+                        )}
+                        {vis.currencies && vis.curSet.has('gold') && (
+                          <th className="py-3 px-3 font-semibold">Gold</th>
+                        )}
+                        {vis.currencies && vis.curSet.has('dawn') && (
+                          <th className="py-3 px-3 font-semibold">Dawn</th>
+                        )}
+                        {vis.currencies && vis.curSet.has('reroll') && (
+                          <th className="py-3 px-3 font-semibold">Reroll</th>
+                        )}
+                        {vis.currencies && vis.curSet.has('remnant') && (
+                          <th className="py-3 px-3 font-semibold">Remnant</th>
+                        )}
+                        {vis.battlepass && <th className="py-3 px-3 font-semibold">Battle Pass</th>}
+                        {vis.tower && <th className="py-3 px-3 font-semibold">หอคอย</th>}
+                        {vis.units && <th className="py-3 px-3 font-semibold">ทีม &amp; คลัง</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">
@@ -3048,169 +3238,193 @@ export default function DashboardClient({
                                 />
                               </td>
                             )}
-                            <td className="py-3 px-3">
-                              <span
-                                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[11px] font-semibold ${
-                                  acc.live_status === 'farming'
-                                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
-                                    : acc.live_status === 'lobby'
-                                    ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
-                                    : 'bg-rose-500/15 border-rose-500/40 text-rose-300'
-                                }`}
-                              >
+                            {vis.status && (
+                              <td className="py-3 px-3">
                                 <span
-                                  className={`w-1.5 h-1.5 rounded-full ${
+                                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[11px] font-semibold ${
                                     acc.live_status === 'farming'
-                                      ? 'bg-emerald-400 animate-pulse'
+                                      ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
                                       : acc.live_status === 'lobby'
-                                      ? 'bg-amber-400'
-                                      : 'bg-rose-500'
+                                      ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                                      : 'bg-rose-500/15 border-rose-500/40 text-rose-300'
                                   }`}
-                                />
-                                {acc.live_status === 'farming'
-                                  ? 'ฟาร์ม'
-                                  : acc.live_status === 'lobby'
-                                  ? 'Lobby'
-                                  : 'ออฟไลน์'}
-                                <span className="opacity-70">• {timeAgo(acc.last_heartbeat)}</span>
-                              </span>
-                            </td>
+                                >
+                                  <span
+                                    className={`w-1.5 h-1.5 rounded-full ${
+                                      acc.live_status === 'farming'
+                                        ? 'bg-emerald-400 animate-pulse'
+                                        : acc.live_status === 'lobby'
+                                        ? 'bg-amber-400'
+                                        : 'bg-rose-500'
+                                    }`}
+                                  />
+                                  {acc.live_status === 'farming'
+                                    ? 'ฟาร์ม'
+                                    : acc.live_status === 'lobby'
+                                    ? 'Lobby'
+                                    : 'ออฟไลน์'}
+                                  <span className="opacity-70">• {timeAgo(acc.last_heartbeat)}</span>
+                                </span>
+                              </td>
+                            )}
                             <td className="py-3 px-3">
                               <div className="font-bold text-white">{acc.bot_name}</div>
                               <div className="text-[11px] text-zinc-400">
                                 {acc.roblox_username || '-'}
                               </div>
                             </td>
-                            <td className="py-3 px-3">
-                              {accLvl > 0 && accLvl < 999 ? (
-                                <span className="px-2 py-0.5 rounded-lg bg-sky-500/15 border border-sky-400/30 text-sky-200 font-bold">
-                                  Lv.{accLvl}
-                                </span>
-                              ) : (
-                                <span className="text-zinc-500">-</span>
-                              )}
-                            </td>
-                            <td className="py-3 px-3">
-                              <div className="text-zinc-100 font-medium">
-                                {acc.current_map || 'Main Lobby'}
-                              </div>
-                              <div className="text-[11px] text-zinc-400">
-                                {acc.current_mode || 'Lobby'}
-                                {acc.current_wave && acc.current_wave !== '-'
-                                  ? ` • ${acc.current_wave}`
-                                  : ''}
-                              </div>
-                            </td>
-                            <td className="py-3 px-3 font-bold text-white">
-                              {formatCompact(Number(cur['Gems'] || 0))}
-                            </td>
-                            <td className="py-3 px-3 font-bold text-pink-200">
-                              {formatCompact(Number(cur['Summer Pearls'] || 0))}
-                            </td>
-                            <td className="py-3 px-3 font-semibold text-amber-200">
-                              {formatCompact(Number(cur['Gold'] || 0))}
-                            </td>
-                            <td className="py-3 px-3 font-semibold text-amber-300">
-                              {Number(cur['Dawn Coins'] || 0).toLocaleString()}
-                            </td>
-                            <td className="py-3 px-3 font-bold text-purple-200">
-                              {rr.toLocaleString()}
-                            </td>
-                            <td className="py-3 px-3 font-bold text-cyan-200">
-                              {rem.toLocaleString()}
-                            </td>
-                            <td className="py-3 px-3">
-                              {bp ? (
-                                <span
-                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[11px] font-bold ${
-                                    bp.has_premium
-                                      ? 'bg-amber-500/15 border-amber-400/40 text-amber-200'
-                                      : 'bg-white/5 border-white/10 text-zinc-200'
-                                  }`}
-                                >
-                                  {bp.has_premium && <Crown className="w-3 h-3 text-amber-300" />}
-                                  {bp.level || 0}/{bp.max_level || 60}
-                                </span>
-                              ) : (
-                                <span className="text-zinc-500">-</span>
-                              )}
-                            </td>
-                            <td className="py-3 px-3">
-                              {(() => {
-                                const tw = (cur['_tower'] as TowerInfo | undefined) || null;
-                                if (!tw) return <span className="text-zinc-500">-</span>;
-                                const evFromMap = tw.event_floors
-                                  ? Math.max(0, ...Object.values(tw.event_floors))
-                                  : 0;
-                                const evCleared =
-                                  typeof tw.event_cleared === 'number' ? tw.event_cleared : evFromMap;
-                                const hasEv =
-                                  Boolean(tw.event_name) ||
-                                  evCleared > 0 ||
-                                  Boolean(tw.active_event_floor);
-                                return (
-                                  <div className="space-y-1">
-                                    {(tw.active_room || tw.infinite_room) && (
-                                      <div className="flex items-center gap-1.5">
-                                        {tw.active_room ? (
-                                          <span className="px-2 py-0.5 rounded-lg border border-purple-400/45 bg-purple-500/20 text-[11px] font-bold text-purple-200 animate-pulse">
-                                            ⚔️ Room {tw.active_room}
-                                          </span>
-                                        ) : (
-                                          <span className="px-2 py-0.5 rounded-lg border border-purple-400/30 bg-purple-500/10 text-[11px] font-bold text-purple-200">
-                                            Room {tw.infinite_room}
-                                          </span>
-                                        )}
-                                        {tw.rank_pct && (
-                                          <span className="text-[10px] text-fuchsia-300/90 font-semibold">
-                                            {tw.rank_pct}
-                                          </span>
-                                        )}
-                                      </div>
-                                    )}
-                                    {hasEv && (
-                                      <div className="flex items-center gap-1.5">
-                                        {tw.active_event_floor ? (
-                                          <span className="px-2 py-0.5 rounded-lg border border-teal-400/45 bg-teal-500/20 text-[10px] font-bold text-teal-200 animate-pulse">
-                                            ⚔️ Fl.{tw.active_event_floor}
-                                          </span>
-                                        ) : (
-                                          <span className="px-2 py-0.5 rounded-lg border border-teal-400/30 bg-teal-500/10 text-[10px] font-bold text-teal-200">
-                                            {tw.event_name ? tw.event_name.replace(/\s*\([^)]*\)/, '') : 'Event'} Fl.{evCleared + 1}
-                                          </span>
-                                        )}
-                                        {tw.event_rank && (
-                                          <span className="text-[10px] text-sky-300 font-semibold">
-                                            {tw.event_rank}
-                                          </span>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })()}
-                            </td>
-                            <td className="py-3 px-3">
-                              <div className="flex items-center gap-1.5">
-                                <div className="flex -space-x-1.5">
-                                  {accTeam.slice(0, 6).map((tu) => {
-                                    const img = getUnitPortrait(tu.name);
-                                    return img ? (
-                                      <img
-                                        key={tu.slot}
-                                        src={img}
-                                        alt={tu.name}
-                                        title={tu.name}
-                                        className="w-6 h-6 rounded-full border border-white/25 bg-[#12070a] object-cover"
-                                      />
-                                    ) : null;
-                                  })}
+                            {vis.currencies && vis.curSet.has('level') && (
+                              <td className="py-3 px-3">
+                                {accLvl > 0 && accLvl < 999 ? (
+                                  <span className="px-2 py-0.5 rounded-lg bg-sky-500/15 border border-sky-400/30 text-sky-200 font-bold">
+                                    Lv.{accLvl}
+                                  </span>
+                                ) : (
+                                  <span className="text-zinc-500">-</span>
+                                )}
+                              </td>
+                            )}
+                            {vis.status && (
+                              <td className="py-3 px-3">
+                                <div className="text-zinc-100 font-medium">
+                                  {acc.current_map || 'Main Lobby'}
                                 </div>
-                                <span className="text-[11px] text-zinc-300 font-semibold">
-                                  {totalUnitsCnt > 0 ? `${totalUnitsCnt} ตัว` : ''}
-                                </span>
-                              </div>
-                            </td>
+                                <div className="text-[11px] text-zinc-400">
+                                  {acc.current_mode || 'Lobby'}
+                                  {acc.current_wave && acc.current_wave !== '-'
+                                    ? ` • ${acc.current_wave}`
+                                    : ''}
+                                </div>
+                              </td>
+                            )}
+                            {vis.currencies && vis.curSet.has('gems') && (
+                              <td className="py-3 px-3 font-bold text-white">
+                                {formatCompact(Number(cur['Gems'] || 0))}
+                              </td>
+                            )}
+                            {vis.currencies && vis.curSet.has('pearls') && (
+                              <td className="py-3 px-3 font-bold text-pink-200">
+                                {formatCompact(Number(cur['Summer Pearls'] || 0))}
+                              </td>
+                            )}
+                            {vis.currencies && vis.curSet.has('gold') && (
+                              <td className="py-3 px-3 font-semibold text-amber-200">
+                                {formatCompact(Number(cur['Gold'] || 0))}
+                              </td>
+                            )}
+                            {vis.currencies && vis.curSet.has('dawn') && (
+                              <td className="py-3 px-3 font-semibold text-amber-300">
+                                {Number(cur['Dawn Coins'] || 0).toLocaleString()}
+                              </td>
+                            )}
+                            {vis.currencies && vis.curSet.has('reroll') && (
+                              <td className="py-3 px-3 font-bold text-purple-200">
+                                {rr.toLocaleString()}
+                              </td>
+                            )}
+                            {vis.currencies && vis.curSet.has('remnant') && (
+                              <td className="py-3 px-3 font-bold text-cyan-200">
+                                {rem.toLocaleString()}
+                              </td>
+                            )}
+                            {vis.battlepass && (
+                              <td className="py-3 px-3">
+                                {bp ? (
+                                  <span
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[11px] font-bold ${
+                                      bp.has_premium
+                                        ? 'bg-amber-500/15 border-amber-400/40 text-amber-200'
+                                        : 'bg-white/5 border-white/10 text-zinc-200'
+                                    }`}
+                                  >
+                                    {bp.has_premium && <Crown className="w-3 h-3 text-amber-300" />}
+                                    {bp.level || 0}/{bp.max_level || 60}
+                                  </span>
+                                ) : (
+                                  <span className="text-zinc-500">-</span>
+                                )}
+                              </td>
+                            )}
+                            {vis.tower && (
+                              <td className="py-3 px-3">
+                                {(() => {
+                                  const tw = (cur['_tower'] as TowerInfo | undefined) || null;
+                                  if (!tw) return <span className="text-zinc-500">-</span>;
+                                  const evFromMap = tw.event_floors
+                                    ? Math.max(0, ...Object.values(tw.event_floors))
+                                    : 0;
+                                  const evCleared =
+                                    typeof tw.event_cleared === 'number' ? tw.event_cleared : evFromMap;
+                                  const hasEv =
+                                    Boolean(tw.event_name) ||
+                                    evCleared > 0 ||
+                                    Boolean(tw.active_event_floor);
+                                  return (
+                                    <div className="space-y-1">
+                                      {(tw.active_room || tw.infinite_room) && (
+                                        <div className="flex items-center gap-1.5">
+                                          {tw.active_room ? (
+                                            <span className="px-2 py-0.5 rounded-lg border border-purple-400/45 bg-purple-500/20 text-[11px] font-bold text-purple-200 animate-pulse">
+                                              ⚔️ Room {tw.active_room}
+                                            </span>
+                                          ) : (
+                                            <span className="px-2 py-0.5 rounded-lg border border-purple-400/30 bg-purple-500/10 text-[11px] font-bold text-purple-200">
+                                              Room {tw.infinite_room}
+                                            </span>
+                                          )}
+                                          {tw.rank_pct && (
+                                            <span className="text-[10px] text-fuchsia-300/90 font-semibold">
+                                              {tw.rank_pct}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+                                      {hasEv && (
+                                        <div className="flex items-center gap-1.5">
+                                          {tw.active_event_floor ? (
+                                            <span className="px-2 py-0.5 rounded-lg border border-teal-400/45 bg-teal-500/20 text-[10px] font-bold text-teal-200 animate-pulse">
+                                              ⚔️ Fl.{tw.active_event_floor}
+                                            </span>
+                                          ) : (
+                                            <span className="px-2 py-0.5 rounded-lg border border-teal-400/30 bg-teal-500/10 text-[10px] font-bold text-teal-200">
+                                              {tw.event_name ? tw.event_name.replace(/\s*\([^)]*\)/, '') : 'Event'} Fl.{evCleared + 1}
+                                            </span>
+                                          )}
+                                          {tw.event_rank && (
+                                            <span className="text-[10px] text-sky-300 font-semibold">
+                                              {tw.event_rank}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
+                              </td>
+                            )}
+                            {vis.units && (
+                              <td className="py-3 px-3">
+                                <div className="flex items-center gap-1.5">
+                                  <div className="flex -space-x-1.5">
+                                    {accTeam.slice(0, 6).map((tu) => {
+                                      const img = getUnitPortrait(tu.name);
+                                      return img ? (
+                                        <img
+                                          key={tu.slot}
+                                          src={img}
+                                          alt={tu.name}
+                                          title={tu.name}
+                                          className="w-6 h-6 rounded-full border border-white/25 bg-[#12070a] object-cover"
+                                        />
+                                      ) : null;
+                                    })}
+                                  </div>
+                                  <span className="text-[11px] text-zinc-300 font-semibold">
+                                    {totalUnitsCnt > 0 ? `${totalUnitsCnt} ตัว` : ''}
+                                  </span>
+                                </div>
+                              </td>
+                            )}
                           </tr>
                         );
                       })}
@@ -4032,16 +4246,16 @@ export default function DashboardClient({
           onClick={() => setShowShareModal(false)}
         >
           <div
-            className="w-full max-w-lg rounded-2xl border border-red-500/35 bg-[#12080c]/95 shadow-2xl overflow-hidden animate-fade-slide"
+            className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl border border-red-500/35 bg-[#12080c]/95 shadow-2xl overflow-hidden animate-fade-slide"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between gap-3">
+            <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2.5">
                 <Share2 className="w-5 h-5 text-emerald-300" />
                 <div>
                   <h3 className="text-sm font-bold text-white">สร้างลิงก์แชร์ให้ลูกค้า (Read-Only)</h3>
                   <p className="text-[11px] text-zinc-400">
-                    ลูกค้าเปิดดูของที่ได้ / ความคืบหน้าแบบสดๆ ได้ทันทีโดยไม่เห็น API Key
+                    เลือกว่าจะให้ลูกค้าเห็นส่วนไหนบ้าง (ซ่อนส่วนอื่นทั้งหน้าเว็บและ API อัตโนมัติ)
                   </p>
                 </div>
               </div>
@@ -4054,7 +4268,7 @@ export default function DashboardClient({
               </button>
             </div>
 
-            <div className="p-4 sm:p-5 space-y-4 text-xs">
+            <div className="p-4 sm:p-5 space-y-4 text-xs overflow-y-auto kage-scroll">
               <div>
                 <label className="block text-zinc-400 mb-1.5">ชื่อร้าน / ชื่อออเดอร์ (โชว์ให้ลูกค้าเห็น)</label>
                 <input
@@ -4104,6 +4318,193 @@ export default function DashboardClient({
                       </button>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* Quick Shop Order Presets */}
+              <div className="pt-2 border-t border-white/10">
+                <label className="block text-zinc-400 mb-1.5">Preset งานรับจ้าง (เลือกด่วน)</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {SHARE_PRESETS.map((p) => {
+                    const isSame =
+                      p.sections.length === shareSections.length &&
+                      p.sections.every((s) => shareSections.includes(s)) &&
+                      p.currencies.length === shareCurrencies.length &&
+                      p.currencies.every((c) => shareCurrencies.includes(c));
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setShareSections(p.sections);
+                          setShareCurrencies(p.currencies);
+                          if (p.focusKeywords) setShareFocusText(p.focusKeywords.join(', '));
+                        }}
+                        className={`px-2.5 py-1 rounded-lg border font-semibold cursor-pointer transition ${
+                          isSame
+                            ? 'bg-amber-500/25 border-amber-400/60 text-amber-100'
+                            : 'bg-black/40 border-white/10 text-zinc-300 hover:border-white/25'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Granular Section Checkboxes */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-zinc-400">
+                    เลือกรายละเอียดที่จะให้ลูกค้าเห็น ({shareSections.length}/{ALL_SHARE_SECTIONS.length} หมวด)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShareSections((prev) =>
+                        prev.length === ALL_SHARE_SECTIONS.length ? ['status'] : ALL_SHARE_SECTIONS
+                      )
+                    }
+                    className="text-red-300 hover:text-white cursor-pointer"
+                  >
+                    {shareSections.length === ALL_SHARE_SECTIONS.length ? 'เลือกเฉพาะสถานะ' : 'เปิดทั้งหมด'}
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                  {SHARE_SECTION_META.map((sec) => {
+                    const checked = shareSections.includes(sec.key);
+                    return (
+                      <label
+                        key={sec.key}
+                        className={`flex items-start gap-2 p-2 rounded-xl border cursor-pointer transition ${
+                          checked
+                            ? 'bg-emerald-500/15 border-emerald-400/45 text-white'
+                            : 'bg-black/35 border-white/10 text-zinc-400 hover:border-white/25'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() =>
+                            setShareSections((prev) => {
+                              if (prev.includes(sec.key)) {
+                                const next = prev.filter((k) => k !== sec.key);
+                                return next.length > 0 ? next : prev;
+                              }
+                              return [...prev, sec.key];
+                            })
+                          }
+                          className="mt-0.5 w-3.5 h-3.5 rounded accent-emerald-500 cursor-pointer shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <div className="font-semibold text-[11px] leading-tight truncate">
+                            {sec.label}
+                          </div>
+                          <div className="text-[10px] text-zinc-400 truncate mt-0.5">{sec.desc}</div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Currency Sub-Filter when 'currencies' is selected */}
+              {shareSections.includes('currencies') && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-zinc-400">
+                      เลือกสกุลเงิน / แต้มที่จะแสดง ({shareCurrencies.length}/{ALL_SHARE_CURRENCIES.length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShareCurrencies((prev) =>
+                          prev.length === ALL_SHARE_CURRENCIES.length ? ['gems'] : ALL_SHARE_CURRENCIES
+                        )
+                      }
+                      className="text-red-300 hover:text-white cursor-pointer"
+                    >
+                      {shareCurrencies.length === ALL_SHARE_CURRENCIES.length ? 'เหลือเฉพาะ Gems' : 'เปิดทุกสกุลเงิน'}
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {SHARE_CURRENCY_META.map((cm) => {
+                      const active = shareCurrencies.includes(cm.key);
+                      return (
+                        <button
+                          key={cm.key}
+                          type="button"
+                          onClick={() =>
+                            setShareCurrencies((prev) =>
+                              prev.includes(cm.key)
+                                ? prev.filter((k) => k !== cm.key)
+                                : [...prev, cm.key]
+                            )
+                          }
+                          className={`px-2.5 py-1 rounded-lg border font-semibold cursor-pointer transition ${
+                            active
+                              ? 'bg-sky-500/25 border-sky-400/60 text-sky-100'
+                              : 'bg-black/40 border-white/10 text-zinc-400 hover:border-white/25'
+                          }`}
+                        >
+                          {cm.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Optional Keyword Filter for Loot & Bag */}
+              <div>
+                <label className="block text-zinc-400 mb-1">
+                  กรองเฉพาะชื่อไอเทมที่ลูกค้าจ้าง (ไม่บังคับ — เว้นว่าง = แสดงทุกไอเทม)
+                </label>
+                <input
+                  value={shareFocusText}
+                  onChange={(e) => setShareFocusText(e.target.value)}
+                  placeholder="เช่น Gems, Dawn Coin, Portal, Star Fruit, Remnant (คั่นด้วยคอมม่า)"
+                  className="w-full px-3 py-2 rounded-xl bg-[#090506] border border-red-500/25 focus:outline-none focus:border-red-400 text-white"
+                />
+                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                  {['Gems', 'Dawn Coin', 'Star Remnant', 'Trait Reroll', 'Portal', 'Star Fruit'].map(
+                    (tag) => {
+                      const parts = shareFocusText
+                        .split(',')
+                        .map((s) => s.trim())
+                        .filter(Boolean);
+                      const hasTag = parts.some((p) => p.toLowerCase() === tag.toLowerCase());
+                      return (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => {
+                            const next = hasTag
+                              ? parts.filter((p) => p.toLowerCase() !== tag.toLowerCase())
+                              : [...parts, tag];
+                            setShareFocusText(next.join(', '));
+                          }}
+                          className={`px-2 py-0.5 rounded-md border text-[10px] font-semibold cursor-pointer ${
+                            hasTag
+                              ? 'bg-purple-500/25 border-purple-400/60 text-purple-100'
+                              : 'bg-black/40 border-white/10 text-zinc-400 hover:text-zinc-200'
+                          }`}
+                        >
+                          + {tag}
+                        </button>
+                      );
+                    }
+                  )}
+                  {shareFocusText.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => setShareFocusText('')}
+                      className="px-2 py-0.5 rounded-md text-[10px] text-rose-300 hover:text-white cursor-pointer"
+                    >
+                      ล้างตัวกรอง
+                    </button>
+                  )}
                 </div>
               </div>
 

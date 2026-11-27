@@ -1,5 +1,6 @@
 import { Suspense } from 'react';
 import { verifyShareToken } from '@/lib/shareToken';
+import { resolveShareVisibility } from '@/lib/shareConfig';
 import DashboardClient from '@/components/DashboardClient';
 
 async function ShareContent({
@@ -23,6 +24,8 @@ async function ShareContent({
     );
   }
 
+  const initialShareConfig = resolveShareVisibility(payload);
+
   return (
     <DashboardClient
       user={{
@@ -33,6 +36,7 @@ async function ShareContent({
       shareToken={token}
       shareLabel={payload.l || 'Nexty Shop Live'}
       initialHours={payload.h || 24}
+      initialShareConfig={initialShareConfig}
     />
   );
 }
