@@ -765,11 +765,24 @@ export default function DashboardClient({
     };
     void runFetch();
     const timer = setInterval(() => {
-      void loadDashboard();
+      if (typeof document === 'undefined' || !document.hidden) {
+        void loadDashboard();
+      }
     }, 15000);
+    const onVisibility = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        void loadDashboard();
+      }
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibility);
+    }
     return () => {
       cancelled = true;
       clearInterval(timer);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibility);
+      }
     };
   }, [hours, loadDashboard, readOnly, shareToken]);
 

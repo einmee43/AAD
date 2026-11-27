@@ -245,6 +245,12 @@ local lastGcComplete = false
 local cachedUnitDefs = nil
 local cachedItemDefs = nil
 local cachedTraitDefs = nil
+local cachedKnownUnitNames = nil
+local cachedTraitByImage = nil
+local cachedGcRefs = nil
+local lastSentItemsSig = ""
+local lastSentUnitsSig = ""
+local lastFullPayloadAt = 0
 
 local function prettifyItemId(idStr)
     local clean = tostring(idStr or ""):gsub("^portal_item__", ""):gsub("^portal_", ""):gsub("_", " ")
@@ -275,6 +281,17 @@ local function getUnitDefs()
         end
     end)
     return cachedUnitDefs
+end
+
+local function getKnownUnitNames()
+    if cachedKnownUnitNames ~= nil then return cachedKnownUnitNames end
+    cachedKnownUnitNames = {}
+    for _, def in pairs(getUnitDefs()) do
+        if type(def) == "table" and type(def.name) == "string" then
+            cachedKnownUnitNames[def.name:lower()] = true
+        end
+    end
+    return cachedKnownUnitNames
 end
 
 local function getItemDefs()
@@ -387,55 +404,90 @@ local function scanGcFullInventoryIfDue(force)
     local traitDefs = getTraitDefs()
 
     local ok, result = pcall(function()
-        local nameById = {}
-        local profileTable = nil
-        local bestUniqueContainer = nil
-        local bestUniqueCount = 0
-        local bestNormalContainer = nil
-        local bestUnitContainer = nil
-        local bestUnitCount = 0
+        local refsValid = type(cachedGcRefs) == "table"
+            and type(cachedGcRefs.profileTable) == "table"
+            and type(rawget(cachedGcRefs.profileTable, "inventory")) == "table"
+            and (os.time() - (cachedGcRefs.scannedAt or 0)) < 600
 
-        local bpTierArrays = {}
-        local bpNamedContainers = {}
+        local nameById
+        local profileTable
+        local bestUniqueContainer
+        local bestNormalContainer
+        local bestUnitContainer
+        local bpTierArrays
+        local bpNamedContainers
 
-        for _, t in ipairs(getgc(true)) do
-            if type(t) == "table" then
-                if rawget(t, "Eclipse Portal") or rawget(t, "Sky Portal") or rawget(t, "Lotus Scepter") then
-                    for dispName, itemId in pairs(t) do
-                        if type(dispName) == "string" and type(itemId) == "string" then
-                            nameById[itemId] = dispName
-                        end
-                    end
-                elseif type(rawget(t, "inventory")) == "table" and type(rawget(t, "collection")) == "table" and (rawget(t, "gold_amount") ~= nil or rawget(t, "gem_amount") ~= nil) then
-                    profileTable = t
-                elseif rawget(t, "fairy_tail_shard") and rawget(t, "arrancar_mask") and type(rawget(t, "fairy_tail_shard")) == "number" then
-                    bestNormalContainer = t
-                elseif type(rawget(t, "mana_october")) == "table" or type(rawget(t, "trion_november")) == "table" or type(rawget(t, "flower_june")) == "table" then
-                    table.insert(bpNamedContainers, t)
-                else
-                    local v1 = rawget(t, 1)
-                    if type(v1) == "table" and rawget(v1, "xp_required") ~= nil and rawget(v1, "normal_reward") ~= nil then
-                        table.insert(bpTierArrays, t)
-                    end
-                    local k, firstVal = next(t)
-                    if k ~= nil and type(firstVal) == "table" then
-                        if rawget(firstVal, "item_id") and (rawget(firstVal, "uuid") or rawget(firstVal, "_unique_item_data")) then
-                            local cnt = 0
-                            for _ in pairs(t) do cnt = cnt + 1 end
-                            if cnt > bestUniqueCount then
-                                bestUniqueCount = cnt
-                                bestUniqueContainer = t
+        if refsValid then
+            nameById = cachedGcRefs.nameById or {}
+            profileTable = cachedGcRefs.profileTable
+            bestUniqueContainer = cachedGcRefs.bestUniqueContainer
+            bestNormalContainer = cachedGcRefs.bestNormalContainer
+            bestUnitContainer = cachedGcRefs.bestUnitContainer
+            bpTierArrays = cachedGcRefs.bpTierArrays or {}
+            bpNamedContainers = cachedGcRefs.bpNamedContainers or {}
+        else
+            nameById = {}
+            profileTable = nil
+            bestUniqueContainer = nil
+            local bestUniqueCount = 0
+            bestNormalContainer = nil
+            bestUnitContainer = nil
+            local bestUnitCount = 0
+            bpTierArrays = {}
+            bpNamedContainers = {}
+
+            for _, t in ipairs(getgc(true)) do
+                if type(t) == "table" then
+                    if rawget(t, "Eclipse Portal") or rawget(t, "Sky Portal") or rawget(t, "Lotus Scepter") then
+                        for dispName, itemId in pairs(t) do
+                            if type(dispName) == "string" and type(itemId) == "string" then
+                                nameById[itemId] = dispName
                             end
-                        elseif rawget(firstVal, "unit_id") and rawget(firstVal, "uuid") then
-                            local cnt = 0
-                            for _ in pairs(t) do cnt = cnt + 1 end
-                            if cnt > bestUnitCount then
-                                bestUnitCount = cnt
-                                bestUnitContainer = t
+                        end
+                    elseif type(rawget(t, "inventory")) == "table" and type(rawget(t, "collection")) == "table" and (rawget(t, "gold_amount") ~= nil or rawget(t, "gem_amount") ~= nil) then
+                        profileTable = t
+                    elseif rawget(t, "fairy_tail_shard") and rawget(t, "arrancar_mask") and type(rawget(t, "fairy_tail_shard")) == "number" then
+                        bestNormalContainer = t
+                    elseif type(rawget(t, "mana_october")) == "table" or type(rawget(t, "trion_november")) == "table" or type(rawget(t, "flower_june")) == "table" then
+                        table.insert(bpNamedContainers, t)
+                    else
+                        local v1 = rawget(t, 1)
+                        if type(v1) == "table" and rawget(v1, "xp_required") ~= nil and rawget(v1, "normal_reward") ~= nil then
+                            table.insert(bpTierArrays, t)
+                        end
+                        local k, firstVal = next(t)
+                        if k ~= nil and type(firstVal) == "table" then
+                            if rawget(firstVal, "item_id") and (rawget(firstVal, "uuid") or rawget(firstVal, "_unique_item_data")) then
+                                local cnt = 0
+                                for _ in pairs(t) do cnt = cnt + 1 end
+                                if cnt > bestUniqueCount then
+                                    bestUniqueCount = cnt
+                                    bestUniqueContainer = t
+                                end
+                            elseif rawget(firstVal, "unit_id") and rawget(firstVal, "uuid") then
+                                local cnt = 0
+                                for _ in pairs(t) do cnt = cnt + 1 end
+                                if cnt > bestUnitCount then
+                                    bestUnitCount = cnt
+                                    bestUnitContainer = t
+                                end
                             end
                         end
                     end
                 end
+            end
+
+            if type(profileTable) == "table" then
+                cachedGcRefs = {
+                    profileTable = profileTable,
+                    nameById = nameById,
+                    bestUniqueContainer = bestUniqueContainer,
+                    bestNormalContainer = bestNormalContainer,
+                    bestUnitContainer = bestUnitContainer,
+                    bpTierArrays = bpTierArrays,
+                    bpNamedContainers = bpNamedContainers,
+                    scannedAt = os.time(),
+                }
             end
         end
 
@@ -1032,8 +1084,8 @@ end
 local function readEquippedTeam()
     local team = {}
     pcall(function()
-        local traitByImage = {}
-        pcall(function()
+        if not cachedTraitByImage then
+            cachedTraitByImage = {}
             local rs = game:GetService("ReplicatedStorage")
             local pkg = rs:FindFirstChild("packages")
             local assets = pkg and pkg:FindFirstChild("assets")
@@ -1042,11 +1094,12 @@ local function readEquippedTeam()
             if traitIcons then
                 for _, child in ipairs(traitIcons:GetChildren()) do
                     if child:IsA("ImageLabel") and #child.Image > 0 then
-                        traitByImage[child.Image] = child.Name:lower()
+                        cachedTraitByImage[child.Image] = child.Name:lower()
                     end
                 end
             end
-        end)
+        end
+        local traitByImage = cachedTraitByImage
 
         local pg = LocalPlayer:FindFirstChild("PlayerGui")
         local su = pg and pg:FindFirstChild("spawn_units")
@@ -1345,6 +1398,31 @@ local function sendHeartbeatNow(itemsList, unitsOverride, completeOverride)
             end
         end
 
+        local nowTs = os.time()
+        local forceFull = (nowTs - lastFullPayloadAt) >= 600
+        local iParts = {}
+        if type(usefulItems) == "table" then
+            for _, it in ipairs(usefulItems) do
+                table.insert(iParts, (it.category or "i") .. ":" .. tostring(it.name) .. "=" .. tostring(it.amount) .. ":" .. tostring(it.tier or ""))
+            end
+            table.sort(iParts)
+        end
+        local curItemsSig = table.concat(iParts, "|")
+        local sendItems = (forceFull or curItemsSig ~= lastSentItemsSig) and #iParts > 0
+
+        local uParts = {}
+        if type(gcUnits) == "table" then
+            for _, u in ipairs(gcUnits) do
+                table.insert(uParts, tostring(u.name) .. "=" .. tostring(u.amount) .. ":" .. tostring(u.trait or "") .. ":" .. tostring(u.level or "") .. ":" .. (u.equipped and "1" or "0"))
+            end
+        end
+        local curUnitsSig = table.concat(uParts, "|")
+        local sendUnits = (forceFull or curUnitsSig ~= lastSentUnitsSig) and #uParts > 0
+
+        if sendItems then lastSentItemsSig = curItemsSig end
+        if sendUnits then lastSentUnitsSig = curUnitsSig end
+        if sendItems or sendUnits then lastFullPayloadAt = nowTs end
+
         postIngest({
             event_type = "heartbeat",
             status = status,
@@ -1352,9 +1430,9 @@ local function sendHeartbeatNow(itemsList, unitsOverride, completeOverride)
             current_map = mapName,
             current_wave = waveStr,
             currencies = cur,
-            items = usefulItems,
-            items_complete = gcComplete,
-            units = (type(gcUnits) == "table" and #gcUnits > 0) and gcUnits or nil,
+            items = sendItems and usefulItems or nil,
+            items_complete = sendItems and gcComplete or false,
+            units = sendUnits and gcUnits or nil,
             team = equippedTeam
         })
     end
@@ -1389,7 +1467,7 @@ task.spawn(function()
                 end
             end
         end)
-        task.wait(1.2)
+        task.wait(2.5)
     end
 end)
 
@@ -1536,13 +1614,7 @@ task.spawn(function()
 
                 -- Scan ResultsUI labels for Win/Lose, LevelName, and genuine UI-only item drops (skip Unit EXP cards)
                 local resultStatus = "Win"
-                local unitDefsForSkip = getUnitDefs()
-                local knownUnitNames = {}
-                for _, def in pairs(unitDefsForSkip) do
-                    if type(def) == "table" and type(def.name) == "string" then
-                        knownUnitNames[def.name:lower()] = true
-                    end
-                end
+                local knownUnitNames = getKnownUnitNames()
                 local equippedNamesLower = {}
                 for _, eq in ipairs(readEquippedTeam()) do
                     if eq.name then equippedNamesLower[tostring(eq.name):lower()] = true end
