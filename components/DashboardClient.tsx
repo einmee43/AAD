@@ -482,6 +482,8 @@ function isJunkReward(nameOrItem: string | { name: string; category?: string }):
 function getItemIcon(name: string): string | null {
   const n = name.trim().toLowerCase();
   if (localItemIconMap[n]) return localItemIconMap[n];
+  const stripped = n.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  if (stripped && localItemIconMap[stripped]) return localItemIconMap[stripped];
   if (n.includes('dawn')) return '/icons/dawn_coin.jpg';
   if (n.includes('gem')) return '/icons/gems.png';
   if (n.includes('gold') || n.includes('coin') || n.includes('yen')) return '/icons/gold.png';
@@ -1063,7 +1065,13 @@ export default function DashboardClient({
   );
 
   const getUnitPortrait = useCallback(
-    (name: string) => localUnitPortraitMap[name.toLowerCase()] || unitIconCache[name] || '',
+    (name: string) => {
+      const low = name.trim().toLowerCase();
+      if (localUnitPortraitMap[low]) return localUnitPortraitMap[low];
+      const baseName = low.replace(/\s*\([^)]*\)\s*$/, '').trim();
+      if (baseName && localUnitPortraitMap[baseName]) return localUnitPortraitMap[baseName];
+      return unitIconCache[name] || '';
+    },
     [unitIconCache]
   );
 
