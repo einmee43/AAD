@@ -90,6 +90,24 @@ interface BattlePassInfo {
   seasons?: BattlePassSeason[];
 }
 
+interface TowerInfo {
+  infinite_room?: number;
+  active_room?: number;
+  active_event_floor?: number;
+  season?: string;
+  rank_title?: string;
+  rank_pct?: string;
+  event_floors?: Record<string, number>;
+  dungeon_depth?: number;
+}
+
+function formatEventTowerLabel(key: string): string {
+  return key
+    .replace(/^event_tower_/, '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 interface Account {
   id: string;
   bot_name: string;
@@ -602,6 +620,8 @@ export default function DashboardClient({
   const [showAlerts, setShowAlerts] = useState(false);
   const seenLogIdsRef = useRef<Set<string>>(new Set());
   const logsInitializedRef = useRef(false);
+  const seenTowerStateRef = useRef<Map<string, { inf: number; act: number; ev: Record<string, number>; actEv: number }>>(new Map());
+  const towerInitializedRef = useRef(false);
 
   const loadDashboard = useCallback(async () => {
     const endpoint = shareToken
@@ -751,6 +771,99 @@ export default function DashboardClient({
     return () => clearTimeout(timer);
   }, [logs]);
 
+  // Detect Infinity Mansion / Event Tower climb on auto-refresh and fire in-web alerts + toasts
+  useEffect(() => {
+    if (accounts.length === 0) return;
+    const snapByAcc = new Map<string, Record<string, unknown>>();
+    for (const s of snapshots) {
+      if (s.currencies && typeof s.currencies === 'object') {
+        snapByAcc.set(s.account_id, s.currencies as Record<string, unknown>);
+      }
+    }
+
+    if (!towerInitializedRef.current) {
+      for (const acc of accounts) {
+        const tw = snapByAcc.get(acc.id)?._tower as TowerInfo | undefined;
+        if (tw) {
+          seenTowerStateRef.current.set(acc.id, {
+            inf: Number(tw.infinite_room || 0),
+            act: Number(tw.active_room || 0),
+            ev: { ...(tw.event_floors || {}) },
+            actEv: Number(tw.active_event_floor || 0),
+          });
+        }
+      }
+      if (snapshots.length > 0) towerInitializedRef.current = true;
+      return;
+    }
+
+    const towerAlerts: WebAlert[] = [];
+    for (const acc of accounts) {
+      const tw = snapByAcc.get(acc.id)?._tower as TowerInfo | undefined;
+      if (!tw) continue;
+      const curInf = Number(tw.infinite_room || 0);
+      const curAct = Number(tw.active_room || 0);
+      const curEv = tw.event_floors || {};
+      const curActEv = Number(tw.active_event_floor || 0);
+      const prev = seenTowerStateRef.current.get(acc.id);
+
+      if (prev) {
+        const msgParts: string[] = [];
+        if (prev.inf > 0 && curInf > prev.inf) {
+          msgParts.push(`Infinity Mansion: Room ${prev.inf} ➔ Room ${curInf}`);
+        }
+        if (curAct > 0 && curAct !== prev.act) {
+          msgParts.push(`กำลังไต่ Room ${curAct}`);
+        }
+        for (const [k, fl] of Object.entries(curEv)) {
+          const prevFl = Number(prev.ev[k] || 0);
+          if (prevFl > 0 && fl > prevFl) {
+            msgParts.push(`${formatEventTowerLabel(k)}: Floor ${prevFl} ➔ Floor ${fl}`);
+          }
+        }
+        if (curActEv > 0 && curActEv !== prev.actEv) {
+          msgParts.push(`กำลังลง Event Floor ${curActEv}`);
+        }
+
+        if (msgParts.length > 0) {
+          const rankDesc = [tw.season, tw.rank_title, tw.rank_pct].filter(Boolean).join(' • ');
+          towerAlerts.push({
+            id: `tower-${acc.id}-${Date.now()}-${curInf}-${curAct}-${curActEv}`,
+            title: `🏰 ${acc.bot_name} • หอคอยอัปเดต`,
+            subtitle: rankDesc || 'Infinity Mansion Tracker',
+            rewards: msgParts.join(' • '),
+            isRare: true,
+            result: 'Win',
+            createdAt: new Date().toISOString(),
+          });
+        }
+      }
+
+      seenTowerStateRef.current.set(acc.id, {
+        inf: curInf,
+        act: curAct,
+        ev: { ...curEv },
+        actEv: curActEv,
+      });
+    }
+
+    if (towerAlerts.length > 0) {
+      const ids = new Set(towerAlerts.map((a) => a.id));
+      const rafId = requestAnimationFrame(() => {
+        setAlerts((prev) => [...towerAlerts, ...prev].slice(0, 15));
+        setUnreadCount((c) => c + towerAlerts.length);
+        setToasts((prev) => [...towerAlerts, ...prev].slice(0, 3));
+      });
+      const timer = setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => !ids.has(t.id)));
+      }, 7000);
+      return () => {
+        cancelAnimationFrame(rafId);
+        clearTimeout(timer);
+      };
+    }
+  }, [accounts, snapshots]);
+
   // Keep selectedIdx valid
   const activeAccount = accounts[selectedIdx] || accounts[0] || null;
 
@@ -885,6 +998,7 @@ export default function DashboardClient({
     Number(activeCurrencies['Star Remnant'] || 0) ||
     activeStarRemLimited + activeStarRemRegular;
   const activeBattlePass = (activeCurrencies['_battlepass'] as BattlePassInfo | undefined) || null;
+  const activeTower = (activeCurrencies['_tower'] as TowerInfo | undefined) || null;
 
   const multiBotTotals = useMemo(() => {
     let gems = 0;
@@ -1728,6 +1842,82 @@ export default function DashboardClient({
                         </>
                       )}
                     </button>
+
+                    {/* Infinity Mansion / Tower Card */}
+                    <div
+                      className={`col-span-2 rounded-xl border p-3 ${
+                        activeTower
+                          ? 'border-purple-400/35 bg-gradient-to-br from-purple-950/35 via-[#12070a]/90 to-[#12070a]/90'
+                          : 'border-red-500/20 bg-[#12070a]/70'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Layers
+                            className={`w-4 h-4 shrink-0 ${
+                              activeTower ? 'text-purple-300' : 'text-zinc-500'
+                            }`}
+                          />
+                          <span className="text-[11px] font-semibold text-zinc-200 truncate">
+                            Infinity Mansion
+                          </span>
+                          {activeTower?.season && (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-400/30 text-[9px] font-bold text-emerald-300 shrink-0">
+                              {activeTower.season}
+                            </span>
+                          )}
+                        </div>
+                        {activeTower?.active_room ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/25 border border-purple-400/45 text-[10px] font-bold text-purple-200 animate-pulse shrink-0">
+                            ⚔️ กำลังไต่ Room {activeTower.active_room}
+                          </span>
+                        ) : activeTower?.active_event_floor ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/25 border border-amber-400/45 text-[10px] font-bold text-amber-200 animate-pulse shrink-0">
+                            ⚔️ Event Floor {activeTower.active_event_floor}
+                          </span>
+                        ) : activeTower?.infinite_room ? (
+                          <span className="text-xs font-extrabold text-purple-200 shrink-0">
+                            Room {activeTower.infinite_room}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-zinc-500">รอซิงค์ข้อมูลหอคอย</span>
+                        )}
+                      </div>
+
+                      {activeTower && (
+                        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                          <div className="flex items-center gap-1.5 text-zinc-300">
+                            {activeTower.infinite_room ? (
+                              <span className="font-bold text-purple-200">
+                                Furthest Room {activeTower.infinite_room}
+                              </span>
+                            ) : null}
+                            {(activeTower.rank_title || activeTower.rank_pct) && (
+                              <span className="text-zinc-400">
+                                •{' '}
+                                <span className="text-fuchsia-300 font-semibold">
+                                  {activeTower.rank_title || 'Ranked'}
+                                </span>
+                                {activeTower.rank_pct ? ` (${activeTower.rank_pct})` : ''}
+                              </span>
+                            )}
+                          </div>
+                          {activeTower.event_floors &&
+                            Object.keys(activeTower.event_floors).length > 0 && (
+                              <div className="flex flex-wrap items-center gap-1">
+                                {Object.entries(activeTower.event_floors).map(([k, fl]) => (
+                                  <span
+                                    key={k}
+                                    className="px-1.5 py-0.5 rounded bg-purple-500/15 border border-purple-400/30 text-[10px] font-semibold text-purple-200"
+                                  >
+                                    {formatEventTowerLabel(k)} Fl.{fl}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                        </div>
+                      )}
+                    </div>
 
                     <div className="col-span-2 rounded-xl border border-red-500/25 bg-[#12070a]/90 p-3 flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
@@ -2713,6 +2903,7 @@ export default function DashboardClient({
                         <th className="py-3 px-3 font-semibold">Reroll</th>
                         <th className="py-3 px-3 font-semibold">Remnant</th>
                         <th className="py-3 px-3 font-semibold">Battle Pass</th>
+                        <th className="py-3 px-3 font-semibold">หอคอย</th>
                         <th className="py-3 px-3 font-semibold">ทีม &amp; คลัง</th>
                       </tr>
                     </thead>
@@ -2855,6 +3046,42 @@ export default function DashboardClient({
                               ) : (
                                 <span className="text-zinc-500">-</span>
                               )}
+                            </td>
+                            <td className="py-3 px-3">
+                              {(() => {
+                                const tw = (cur['_tower'] as TowerInfo | undefined) || null;
+                                if (!tw) return <span className="text-zinc-500">-</span>;
+                                const evEntries = tw.event_floors
+                                  ? Object.entries(tw.event_floors).filter(([, fl]) => fl > 0)
+                                  : [];
+                                return (
+                                  <div className="space-y-0.5">
+                                    <div className="flex items-center gap-1.5">
+                                      {tw.active_room ? (
+                                        <span className="px-2 py-0.5 rounded-lg border border-purple-400/45 bg-purple-500/20 text-[11px] font-bold text-purple-200 animate-pulse">
+                                          ⚔️ Room {tw.active_room}
+                                        </span>
+                                      ) : tw.infinite_room ? (
+                                        <span className="px-2 py-0.5 rounded-lg border border-purple-400/30 bg-purple-500/10 text-[11px] font-bold text-purple-200">
+                                          Room {tw.infinite_room}
+                                        </span>
+                                      ) : null}
+                                      {tw.rank_pct && (
+                                        <span className="text-[10px] text-fuchsia-300/90 font-semibold">
+                                          {tw.rank_pct}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {evEntries.length > 0 && (
+                                      <div className="text-[10px] text-zinc-400 truncate max-w-[140px]">
+                                        {evEntries
+                                          .map(([k, fl]) => `${formatEventTowerLabel(k)} Fl.${fl}`)
+                                          .join(', ')}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </td>
                             <td className="py-3 px-3">
                               <div className="flex items-center gap-1.5">
@@ -3250,7 +3477,7 @@ export default function DashboardClient({
                           <div className="text-xs font-mono text-red-300 truncate">{k.api_key}</div>
                           <div className="text-[11px] text-zinc-500 mt-0.5">
                             ใช้งานล่าสุด: {k.last_used_at ? timeAgo(k.last_used_at) : 'ยังไม่เคยใช้'}
-                            {k.discord_webhook_url ? ' • Discord Alert ON' : ' • ยังไม่ใส่ Webhook'}
+                            {k.discord_webhook_url ? ' • Discord Alert ON (Rare / Portal / หอคอย)' : ' • ยังไม่ใส่ Webhook'}
                           </div>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">

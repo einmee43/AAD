@@ -154,7 +154,51 @@ local cachedTraitRerolls = nil
 local cachedTotalTraitRerolls = nil
 local cachedStarRemnants = nil
 local cachedBattlePass = nil
+local cachedTowerData = nil
+local cachedActiveTowerRoom = nil
+local cachedActiveEventFloor = nil
 local cachedProfileCur = {}
+
+local function readTowerGuiInfo()
+    local info = {}
+    pcall(function()
+        local pg = LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui")
+        if not pg then return end
+        local itUi = pg:FindFirstChild("InfiniteTowerUI")
+        local ls = itUi and itUi:FindFirstChild("LevelSelect")
+        local top = ls and ls:FindFirstChild("Top")
+        local topTitle = top and top:FindFirstChild("Title")
+        if topTitle and topTitle:IsA("TextLabel") then
+            local txt = tostring(topTitle.Text or ""):gsub("<[^>]+>", "")
+            local sMatch = txt:match("%((Season%s*%d+)%)") or txt:match("(Season%s*%d+)")
+            if sMatch then info.season = sMatch end
+        end
+
+        local rkUi = pg:FindFirstChild("InfinityCastleRankingUI")
+        local m1 = rkUi and rkUi:FindFirstChild("Main")
+        local m2 = m1 and m1:FindFirstChild("Main")
+        local sc = m2 and m2:FindFirstChild("Scroll")
+        local yr = sc and sc:FindFirstChild("YourRanking")
+        if yr then
+            local frVal = yr:FindFirstChild("FurthestRoom") and yr.FurthestRoom:FindFirstChild("V") and yr.FurthestRoom.V:FindFirstChild("V")
+            if frVal and frVal:IsA("TextLabel") then
+                local rNum = tonumber(tostring(frVal.Text):match("%d+"))
+                if rNum and rNum > 0 then info.gui_room = rNum end
+            end
+            local rtVal = yr:FindFirstChild("RankTitle") and yr.RankTitle:FindFirstChild("V") and yr.RankTitle.V:FindFirstChild("V")
+            if rtVal and rtVal:IsA("TextLabel") then
+                local t = tostring(rtVal.Text or ""):gsub("<[^>]+>", ""):match("^%s*(.-)%s*$")
+                if t ~= "" and t ~= "???" then info.rank_title = t end
+            end
+            local rkVal = yr:FindFirstChild("Ranking") and yr.Ranking:FindFirstChild("V") and yr.Ranking.V:FindFirstChild("V")
+            if rkVal and rkVal:IsA("TextLabel") then
+                local p = tostring(rkVal.Text or ""):gsub("<[^>]+>", ""):match("^%s*(.-)%s*$")
+                if p ~= "" and p ~= "???" then info.rank_pct = p end
+            end
+        end
+    end)
+    return info
+end
 local lastGcScanAt = 0
 local lastGcComplete = false
 local cachedUnitDefs = nil
@@ -717,6 +761,50 @@ local function scanGcFullInventoryIfDue(force)
             end
         end
 
+        local towerSummary = nil
+        local guiTower = readTowerGuiInfo()
+        local infRoom = nil
+        local eventFloors = nil
+        local dungeonDepth = nil
+
+        if profileTable then
+            local ld = rawget(profileTable, "level_data")
+            local it = type(ld) == "table" and rawget(ld, "infinite_tower") or nil
+            if type(it) == "table" then
+                local fr = tonumber(rawget(it, "floor_reached"))
+                if fr and fr > 0 then infRoom = fr end
+            end
+
+            local etf = rawget(profileTable, "_event_tower_floors")
+            if type(etf) == "table" then
+                for k, v in pairs(etf) do
+                    local fv = tonumber(v)
+                    if type(k) == "string" and fv and fv > 0 then
+                        eventFloors = eventFloors or {}
+                        eventFloors[k] = fv
+                    end
+                end
+            end
+
+            local dd = rawget(profileTable, "dungeon_data")
+            if type(dd) == "table" and rawget(dd, "_started") then
+                local dn = tonumber(rawget(dd, "depth")) or tonumber(rawget(dd, "floor")) or tonumber(rawget(dd, "room"))
+                if dn and dn > 0 then dungeonDepth = dn end
+            end
+        end
+
+        local finalRoom = infRoom or guiTower.gui_room
+        if finalRoom or eventFloors or dungeonDepth then
+            towerSummary = {
+                infinite_room = finalRoom,
+                season = guiTower.season,
+                rank_title = guiTower.rank_title,
+                rank_pct = guiTower.rank_pct,
+                event_floors = eventFloors,
+                dungeon_depth = dungeonDepth,
+            }
+        end
+
         return {
             portals = portalsMap,
             items = itemsMap,
@@ -725,6 +813,7 @@ local function scanGcFullInventoryIfDue(force)
             totalTraitRerolls = totalTraitRerollsVal,
             starRemnants = starRemSummary,
             battlePass = battlePassSummary,
+            towerData = towerSummary,
             profileCur = profileCur,
             complete = (type(normalContainer) == "table" and next(itemsMap) ~= nil),
         }
@@ -738,6 +827,16 @@ local function scanGcFullInventoryIfDue(force)
         if result.totalTraitRerolls ~= nil then cachedTotalTraitRerolls = result.totalTraitRerolls end
         if result.starRemnants ~= nil then cachedStarRemnants = result.starRemnants end
         if result.battlePass ~= nil then cachedBattlePass = result.battlePass end
+        if type(result.towerData) == "table" then
+            local mergedTower = {}
+            if type(cachedTowerData) == "table" then
+                for k, v in pairs(cachedTowerData) do mergedTower[k] = v end
+            end
+            for k, v in pairs(result.towerData) do
+                if v ~= nil then mergedTower[k] = v end
+            end
+            cachedTowerData = mergedTower
+        end
         if type(result.profileCur) == "table" and next(result.profileCur) ~= nil then
             cachedProfileCur = result.profileCur
         end
@@ -750,6 +849,7 @@ local function scanGcFullInventoryIfDue(force)
             totalTraitRerolls = cachedTotalTraitRerolls,
             starRemnants = cachedStarRemnants,
             battlePass = cachedBattlePass,
+            towerData = cachedTowerData,
             profileCur = cachedProfileCur,
             complete = lastGcComplete,
         }
@@ -977,8 +1077,16 @@ local function detectState()
             if lLbl and lLbl:IsA("TextLabel") and #lLbl.Text > 0 then
                 local lvlTxt = lLbl.Text
                 local lowLvl = lvlTxt:lower()
+                local roomNum = tonumber(lowLvl:match("room%s*(%d+)"))
+                local floorNum = tonumber(lowLvl:match("floor%s*(%d+)"))
                 if lowLvl:find("dungeon") or lowLvl:find("depth") then
                     mode = "Dungeon"
+                elseif lowLvl:find("infinity mansion") or lowLvl:find("infinite tower") or lowLvl:find("infinity castle") or (roomNum and not lowLvl:find("dungeon")) then
+                    mode = "Infinity Tower"
+                    if roomNum and roomNum > 0 then cachedActiveTowerRoom = roomNum end
+                elseif floorNum and floorNum > 0 then
+                    mode = "Event Tower"
+                    cachedActiveEventFloor = floorNum
                 elseif lowLvl:find("portal") then
                     mode = "Portal"
                 end
@@ -988,6 +1096,11 @@ local function detectState()
             end
         end
     end)
+
+    if status == "lobby" then
+        cachedActiveTowerRoom = nil
+        cachedActiveEventFloor = nil
+    end
 
     return status, mode, mapName, waveStr
 end
@@ -1092,6 +1205,7 @@ local function attachProfileMetadata(cur, gcObj)
     local totRr = (type(gcObj) == "table" and gcObj.totalTraitRerolls ~= nil) and gcObj.totalTraitRerolls or cachedTotalTraitRerolls
     local srem = (type(gcObj) == "table" and type(gcObj.starRemnants) == "table") and gcObj.starRemnants or cachedStarRemnants
     local bp = (type(gcObj) == "table" and type(gcObj.battlePass) == "table") and gcObj.battlePass or cachedBattlePass
+    local tw = (type(gcObj) == "table" and type(gcObj.towerData) == "table") and gcObj.towerData or cachedTowerData
 
     if rr ~= nil then cur["Trait Reroll"] = rr end
     if totRr ~= nil then cur["_total_trait_rerolls"] = totRr end
@@ -1102,6 +1216,23 @@ local function attachProfileMetadata(cur, gcObj)
     end
     if type(bp) == "table" then
         cur["_battlepass"] = bp
+    end
+    if type(tw) == "table" or cachedActiveTowerRoom or cachedActiveEventFloor then
+        local towerOut = {}
+        if type(tw) == "table" then
+            for k, v in pairs(tw) do towerOut[k] = v end
+        else
+            local guiTower = readTowerGuiInfo()
+            if guiTower.gui_room then towerOut.infinite_room = guiTower.gui_room end
+            if guiTower.season then towerOut.season = guiTower.season end
+            if guiTower.rank_title then towerOut.rank_title = guiTower.rank_title end
+            if guiTower.rank_pct then towerOut.rank_pct = guiTower.rank_pct end
+        end
+        if cachedActiveTowerRoom then towerOut.active_room = cachedActiveTowerRoom end
+        if cachedActiveEventFloor then towerOut.active_event_floor = cachedActiveEventFloor end
+        if next(towerOut) ~= nil then
+            cur["_tower"] = towerOut
+        end
     end
 end
 
